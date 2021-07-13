@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -21,9 +21,11 @@
 #ifndef MMCOMM_SRC_SPECIAL_INI_H_
 #define MMCOMM_SRC_SPECIAL_INI_H_
 
+#include "mars/openssl/include/openssl/md5.h"
 #include "mars/comm/ini.h"
-#include "mars/comm/md5.h"
 #include "mars/comm/xlogger/xlogger.h"
+#include "mars/comm/strutil.h"
+#include "mars/openssl/include/openssl/md5.h"
 
 /**
  *	In order to allow the value of section is anything
@@ -36,13 +38,11 @@ public:
     
 	bool Create(const std::string& section) {
 
-		unsigned char sig[16] = {0};
-		MD5_buffer(section.c_str(), (unsigned int)section.length(), sig);
+		unsigned char sig[MD5_DIGEST_LENGTH] = {0};
+		MD5((const unsigned char*)section.c_str(), (unsigned int)section.length(), sig);
         
-		char des[33] = {0};
-		MD5_sig_to_string((const char*)sig, des);
-        
-		if(INI::Create(des)) {
+        std::string des = strutil::MD5DigestToBase16(sig);
+		if (INI::Create(des)) {
 			Set<std::string>("name", section);
 			return true;
 		}
@@ -53,13 +53,8 @@ public:
 	bool Select(const std::string& section) {
         
 		unsigned char sig[16] = {0};
-		MD5_buffer(section.c_str(), (unsigned int)section.length(), sig);
-        
-		char des[33] = {0};
-		MD5_sig_to_string((const char*)sig, des);
-		if (strnlen(des, 33) == 0) {
-			xerror2(TSF"section:%0, sig:%1, des:%2", section, sig, des);
-		}
+		MD5((const unsigned char*)section.c_str(), (unsigned int)section.length(), sig);
+        std::string des = strutil::MD5DigestToBase16(sig);
 		return INI::Select(des);
 	}
 };

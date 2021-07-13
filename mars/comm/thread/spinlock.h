@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -21,12 +21,21 @@
 
 #ifdef __APPLE__
 #include <libkern/OSAtomic.h>
+#include <os/lock.h>
 
+#if __IPHONE_OS_VERSION_MIN_REQUIRED >= __IPHONE_10_0
+#define splock os_unfair_lock
+#define splockinit(lock) {*lock = OS_UNFAIR_LOCK_INIT;}
+#define splocklock os_unfair_lock_lock
+#define splockunlock os_unfair_lock_unlock
+#define splocktrylock os_unfair_lock_trylock
+#else
 #define splock OSSpinLock
 #define splockinit(lock) {*lock = OS_SPINLOCK_INIT;}
 #define splocklock OSSpinLockLock
 #define splockunlock OSSpinLockUnlock
 #define splocktrylock OSSpinLockTry
+#endif
 
 class SpinLock
 {
@@ -69,6 +78,14 @@ private:
 #include "../../arch/powerpc/include/uapi/asm/unistd.h"
 #endif
 
+#if defined(_WIN32)
+#if defined(_MSC_VER) && _MSC_VER >= 1310 && ( defined(_M_ARM) )
+	extern "C" void YieldProcessor();
+#else
+	extern "C" void _mm_pause();
+#endif
+#endif
+
 static inline void cpu_relax() {
 
 #if defined(__arc__) || defined(__mips__) || defined(__arm__) || defined(__powerpc__)
@@ -82,10 +99,8 @@ static inline void cpu_relax() {
 
 #elif defined(_WIN32)
 #if defined(_MSC_VER) && _MSC_VER >= 1310 && ( defined(_M_ARM) )
-	extern "C" void YieldProcessor();
 	YieldProcessor();
 #else
-	extern "C" void _mm_pause();
 	_mm_pause();
 #endif
 #endif
@@ -94,7 +109,7 @@ static inline void cpu_relax() {
 
 
 #ifdef _WIN32
-#include <thr/threads.h>
+#include <xthreads.h>
 extern "C" void thrd_yield();
 #define sched_yield() thrd_yield()
 #else
@@ -126,12 +141,12 @@ public:
 
      bool lock()
      {
-         register unsigned int pause_count = initial_pause;
+         /*register*/ unsigned int pause_count = initial_pause; //'register' storage class specifier is deprecated and incompatible with C++1z
          while (!trylock())
          {
              if (pause_count < max_pause)
              {
-                 for (register unsigned int i = 0; i < pause_count; ++i)
+                 for (/*register*/ unsigned int i = 0; i < pause_count; ++i) //'register' storage class specifier is deprecated and incompatible with C++1z
                  {
                      cpu_relax();
                  }

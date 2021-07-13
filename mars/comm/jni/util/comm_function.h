@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -21,6 +21,8 @@
 
 #include <jni.h>
 #include <string>
+#include <map>
+
 struct JniMethodInfo;
 class AutoBuffer;
 
@@ -48,5 +50,7 @@ jstring JNU_Wchar2JString(JNIEnv* _env, wchar_t* wchar);
 // char* to jstring
 jstring JNU_Chars2Jstring(JNIEnv* _env, const char* pat);
 void JNU_FreeJstring(JNIEnv* _env, jstring str);
+
+std::map<std::string, std::string> JNU_JObject2Map(JNIEnv* _env, const jobject _obj);
 
 #endif

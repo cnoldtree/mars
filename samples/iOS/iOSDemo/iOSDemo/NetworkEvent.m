@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -86,7 +86,7 @@
     
     id<UINotifyDelegate> uiObserver = [controllers objectForKey:taskIdKey];
     if (uiObserver != nil) {
-        returnType = [uiObserver notifyUIWithResponse:data];
+        returnType = [uiObserver onPostDecode:data];
     }
     else {
         returnType = -1;
@@ -100,6 +100,9 @@
     NSString *taskIdKey = [NSString stringWithFormat:@"%d", tid];
     
     [tasks removeObjectForKey:taskIdKey];
+    id<UINotifyDelegate> uiObserver = [controllers objectForKey:taskIdKey];
+    [uiObserver onTaskEnd:tid errType:errtype errCode:errcode];
+    
     [controllers removeObjectForKey:taskIdKey];
     
     return 0;

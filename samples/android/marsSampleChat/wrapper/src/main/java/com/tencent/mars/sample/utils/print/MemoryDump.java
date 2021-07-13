@@ -1,5 +1,5 @@
 /*
-* Tencent is pleased to support the open source community by making GAutomator available.
+* Tencent is pleased to support the open source community by making Mars available.
 * Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 *
 * Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -15,7 +15,6 @@
 package com.tencent.mars.sample.utils.print;
 
 /**
- *
  * Created by zhaoyuan on 2016/11/17.
  */
 
@@ -31,7 +30,7 @@ public class MemoryDump {
             return "(null)";
         }
 
-        final char[] hexDigits = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f' };
+        final char[] hexDigits = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
 
         final int j = privateKey.length;
         final int cHexWidth = 3;

@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -22,8 +22,6 @@
 
 #import "TopicViewController.h"
 #import "LogUtil.h"
-
-#import "Main.pb.h"
 
 #import "CGITask.h"
 #import "CommandID.h"
@@ -74,30 +72,38 @@
 }
 
 -(void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
-    NSString* topicName = converSations[indexPath.row].topic;
-    TopicViewController *topicControl = [[self storyboard]instantiateViewControllerWithIdentifier:@"Topic"];
-    topicControl.topicName = topicName;
+    Conversation *conversation = converSations[indexPath.row];
+    TopicViewController *topicControl = [[self storyboard] instantiateViewControllerWithIdentifier:@"Topic"];
+    topicControl.conversation = conversation;
     [[self navigationController] pushViewController:topicControl animated:YES];
 }
 
 - (NSData*)requestSendData {
     
-    ConversationListRequest* convlstRequest = [[[[ConversationListRequest builder] setType:0] setAccessToken:@"123456"] build];
-    NSData* data = [convlstRequest data];
+    ConversationListRequest *convlstRequest = [ConversationListRequest new];
+    convlstRequest.type = 0;
+    convlstRequest.accessToken = @"123456";
+    NSData *data = [convlstRequest data];
     
     return data;
 }
 
-- (int)notifyUIWithResponse:(NSData*)responseData {
-    
-    ConversationListResponse *convlstResponse = [ConversationListResponse parseFromData:responseData];
-    self->converSations = convlstResponse.list;
+- (int)onPostDecode:(NSData*)responseData {
+    convlstResponse = [ConversationListResponse parseFromData:responseData error:nil];
+    self->converSations = convlstResponse.listArray;
     LOG_INFO(kModuleViewController, @"recv conversation list, size: %lu", (unsigned long)[self->converSations count]);
-    
-    [self.tableView reloadData];
     
     return [self->converSations count] > 0 ? 0 : -1;
 
+}
+
+- (int)onTaskEnd:(uint32_t)tid errType:(uint32_t)errtype errCode:(uint32_t)errcode {
+    
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self.tableView reloadData];
+    });
+    
+    return 0;
 }
 
 @end

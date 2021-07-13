@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -54,13 +54,13 @@ class TcpQuery {
 
     void send_break();
     std::string getStatus();
-
+    int getErrorCode();
   private:
     char* ip_;
     uint16_t port_;
     SOCKET sock_;
-    SocketSelectBreaker pipe_;
-    SocketSelect select_;
+    comm::SocketBreaker pipe_;
+    comm::SocketSelect select_;
     TcpStatus status_;
     int errcode_;
     unsigned int conn_timeout_;

@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -20,11 +20,13 @@
 
 
 #import "UINotifyDelegate.h"
+#import "PushNotifyDelegate.h"
 
 @class CGITask;
 
 @protocol NetworkDelegate <NSObject>
 
+@required - (void)addPushObserver:(id<PushNotifyDelegate>)observer withCmdId:(int)cmdId;
 @required - (void)addObserver:(id<UINotifyDelegate>)observer forKey:(NSString *)key;
 @required - (void)addCGITasks:(CGITask*)cgiTask forKey:(NSString *)key;
 

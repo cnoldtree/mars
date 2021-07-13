@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -25,7 +25,6 @@
 #include <vector>
 #include <list>
 
-#include "mars/comm/messagequeue/message_queue_utils.h"
 #include "mars/comm/singleton.h"
 #include "mars/comm/thread/thread.h"
 #include "mars/comm/thread/mutex.h"
@@ -65,14 +64,14 @@ class SdtCore {
 
   private:
     //  MessageQueue::ScopeRegister     async_reg_;
-    Thread thread_;
+    comm::Thread thread_;
 
     std::list<BaseChecker*>   check_list_;
 
     CheckRequestProfile		  check_request_;
     volatile bool             cancel_;
     volatile bool             checking_;
-    Mutex					  checking_mutex_;
+    comm::Mutex				  checking_mutex_;
 };
 
 }}

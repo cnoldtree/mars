@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -38,25 +38,30 @@ void StnCallBack::Release() {
     instance_ = NULL;
 }
         
-bool StnCallBack::MakesureAuthed() {
+bool StnCallBack::MakesureAuthed(const std::string& _host, const std::string& _user_id) {
     return true;
 }
 
+
+void StnCallBack::TrafficData(ssize_t _send, ssize_t _recv) {
+    xdebug2(TSF"send:%_, recv:%_", _send, _recv);
+}
+        
 std::vector<std::string> StnCallBack::OnNewDns(const std::string& _host) {
     std::vector<std::string> vector;
     vector.push_back("118.89.24.72");
     return vector;
 }
 
-void StnCallBack::OnPush(int32_t _cmdid, const AutoBuffer& _msgpayload) {
-    if (_msgpayload.Length() > 0) {
-        NSData* recvData = [NSData dataWithBytes:(const void *) _msgpayload.Ptr() length:_msgpayload.Length()];
+void StnCallBack::OnPush(const std::string& _channel_id, uint32_t _cmdid, uint32_t _taskid, const AutoBuffer& _body, const AutoBuffer& _extend) {
+    if (_body.Length() > 0) {
+        NSData* recvData = [NSData dataWithBytes:(const void *) _body.Ptr() length:_body.Length()];
         [[NetworkService sharedInstance] OnPushWithCmd:_cmdid data:recvData];
     }
     
 }
 
-bool StnCallBack::Req2Buf(int32_t _taskid, void* const _user_context, AutoBuffer& _outbuffer, int& _error_code, const int _channel_select) {
+bool StnCallBack::Req2Buf(uint32_t _taskid, void* const _user_context, const std::string& _user_id, AutoBuffer& _outbuffer, AutoBuffer& _extend, int& _error_code, const int _channel_select, const std::string& host) {
     NSData* requestData =  [[NetworkService sharedInstance] Request2BufferWithTaskID:_taskid userContext:_user_context];
     if (requestData == nil) {
         requestData = [[NSData alloc] init];
@@ -66,7 +71,7 @@ bool StnCallBack::Req2Buf(int32_t _taskid, void* const _user_context, AutoBuffer
     return requestData.length > 0;
 }
 
-int StnCallBack::Buf2Resp(int32_t _taskid, void* const _user_context, const AutoBuffer& _inbuffer, int& _error_code, const int _channel_select) {
+int StnCallBack::Buf2Resp(uint32_t _taskid, void* const _user_context, const std::string& _user_id, const AutoBuffer& _inbuffer, const AutoBuffer& _extend, int& _error_code, const int _channel_select) {
     
     int handle_type = mars::stn::kTaskFailHandleNormal;
     NSData* responseData = [NSData dataWithBytes:(const void *) _inbuffer.Ptr() length:_inbuffer.Length()];
@@ -79,14 +84,10 @@ int StnCallBack::Buf2Resp(int32_t _taskid, void* const _user_context, const Auto
     return handle_type;
 }
 
-int  StnCallBack::OnTaskEnd(int32_t _taskid, void* const _user_context, int _error_type, int _error_code) {
+int StnCallBack::OnTaskEnd(uint32_t _taskid, void* const _user_context, const std::string& _user_id, int _error_type, int _error_code) {
     
     return (int)[[NetworkService sharedInstance] OnTaskEndWithTaskID:_taskid userContext:_user_context errType:_error_type errCode:_error_code];
 
-}
-
-void StnCallBack::ReportFlow(int32_t _wifi_recv, int32_t _wifi_send, int32_t _mobile_recv, int32_t _mobile_send) {
-    
 }
 
 void StnCallBack::ReportConnectStatus(int _status, int longlink_status) {
@@ -111,12 +112,12 @@ void StnCallBack::ReportConnectStatus(int _status, int longlink_status) {
 // synccheck：长链成功后由网络组件触发
 // 需要组件组包，发送一个req过去，网络成功会有resp，但没有taskend，处理事务时要注意网络时序
 // 不需组件组包，使用长链做一个sync，不用重试
-int  StnCallBack::GetLonglinkIdentifyCheckBuffer(AutoBuffer& _identify_buffer, AutoBuffer& _buffer_hash, int32_t& _cmdid) {
+int  StnCallBack::GetLonglinkIdentifyCheckBuffer(const std::string& _channel_id, AutoBuffer& _identify_buffer, AutoBuffer& _buffer_hash, int32_t& _cmdid) {
     
     return IdentifyMode::kCheckNever;
 }
 
-bool StnCallBack::OnLonglinkIdentifyResponse(const AutoBuffer& _response_buffer, const AutoBuffer& _identify_buffer_hash) {
+bool StnCallBack::OnLonglinkIdentifyResponse(const std::string& _channel_id, const AutoBuffer& _response_buffer, const AutoBuffer& _identify_buffer_hash) {
     
     return false;
 }
@@ -125,9 +126,6 @@ void StnCallBack::RequestSync() {
 
 }
         
-bool StnCallBack::IsLogoned() {
-    return true;
-}
         
     }
 }

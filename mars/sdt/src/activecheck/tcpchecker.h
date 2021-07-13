@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -35,7 +35,6 @@ class TcpChecker : public BaseChecker {
     virtual ~TcpChecker();
 
     virtual int StartDoCheck(CheckRequestProfile& _check_request);
-    virtual int CancelDoCheck();
 
   protected:
     virtual void __DoCheck(CheckRequestProfile& _check_request);

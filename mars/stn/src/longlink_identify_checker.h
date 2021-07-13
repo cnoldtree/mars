@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -22,18 +22,20 @@
 #define STN_SRC_LONGLINK_IDENTIFY_CHECKER_H_
 
 #include <stdint.h>
+#include <string>
 
 #include "mars/comm/autobuffer.h"
+#include "mars/stn/proto/longlink_packer.h"
 
 class LongLinkIdentifyChecker {
   public:
-    LongLinkIdentifyChecker();
+    LongLinkIdentifyChecker(mars::stn::LongLinkEncoder& _encoder, const std::string& _channel_id, bool _is_minorlong);
     ~LongLinkIdentifyChecker();
 
     bool GetIdentifyBuffer(AutoBuffer& _buffer, uint32_t& _cmd_id);
-    void SetSeq(uint32_t _seq);
+    void SetID(uint32_t _taskid);
 
-    bool IsIdentifyResp(uint32_t _seq);
+    bool IsIdentifyResp(uint32_t _cmdid, uint32_t _taskid, const AutoBuffer& _buffer, const AutoBuffer& _extend) const;
     bool OnIdentifyResp(AutoBuffer& _buffer);
 
     void Reset();
@@ -44,6 +46,9 @@ class LongLinkIdentifyChecker {
     uint32_t cmd_id_;
     uint32_t taskid_;
     AutoBuffer hash_code_buffer_;
+    mars::stn::LongLinkEncoder& encoder_;
+    std::string channel_id_;
+    bool is_minorlong_;
 };
 
 

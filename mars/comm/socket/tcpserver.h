@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -28,8 +28,13 @@
 #include "comm/thread/thread.h"
 
 class XLogger;
-class SocketSelect;
 class TcpServer;
+
+namespace mars {
+namespace comm {
+class SocketSelect;
+}
+}
 
 class MTcpServer {
   public:
@@ -61,14 +66,15 @@ class TcpServer {
 
   protected:
     MTcpServer&         observer_;
-    Thread              thread_;
-    Mutex                  mutex_;
-    Condition            cond_;
+    mars::comm::Thread              thread_;
+    mars::comm::Mutex                  mutex_;
+    mars::comm::Condition            cond_;
 
     SOCKET                 listen_sock_;
     sockaddr_in         bind_addr_;
     const int             backlog_;
-    SocketSelectBreaker breaker_;
+
+    mars::comm::SocketBreaker breaker_;
 };
 
 #endif /* TcpServer_H_ */

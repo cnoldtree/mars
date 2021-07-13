@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -23,27 +23,29 @@
 #include <string>
 
 #include "mars/app/app.h"
+#include "mars/comm/comm_data.h"
 
 class AutoBuffer;
 
 namespace mars {
 namespace app {
 
-	class Callback {
-	public:
-		virtual ~Callback() {};
+    class Callback {
+    public:
+        virtual ~Callback() {};
+        
+        virtual bool GetProxyInfo(const std::string& _host, mars::comm::ProxyInfo& _proxy_info) { return false; }
 
         virtual std::string GetAppFilePath() = 0;
         
-		virtual AccountInfo GetAccountInfo() = 0;
+        virtual AccountInfo GetAccountInfo() = 0;
 
-		virtual unsigned int GetClientVersion() = 0;
+        virtual unsigned int GetClientVersion() = 0;
 
-		virtual DeviceInfo GetDeviceInfo() = 0;
+        virtual DeviceInfo GetDeviceInfo() = 0;
+    };
 
-	};
-
-	void SetCallback(Callback* const callback);
+    void SetCallback(Callback* const callback);
 }}
 
 

@@ -1,5 +1,5 @@
 /*
-* Tencent is pleased to support the open source community by making GAutomator available.
+* Tencent is pleased to support the open source community by making Mars available.
 * Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 *
 * Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -16,7 +16,8 @@ package com.tencent.mars.sample.core;
 
 import android.content.Intent;
 
-import com.google.protobuf.nano.InvalidProtocolBufferNanoException;
+//import com.google.protobuf.MessageLite;
+//import com.google.protobuf.nano.InvalidProtocolBufferNanoException;
 import com.tencent.mars.sample.SampleApplicaton;
 import com.tencent.mars.sample.chat.proto.Messagepush;
 import com.tencent.mars.sample.utils.Constants;
@@ -26,7 +27,7 @@ import com.tencent.mars.xlog.Log;
 /**
  * Created by caoshaokun on 16/12/20.
  */
-public class MessageHandler extends BusinessHandler{
+public class MessageHandler extends BusinessHandler {
 
     public static String TAG = MessageHandler.class.getSimpleName();
 
@@ -34,21 +35,20 @@ public class MessageHandler extends BusinessHandler{
     public boolean handleRecvMessage(PushMessage pushMessage) {
 
         switch (pushMessage.cmdId) {
-            case Constants.PUSHCMD:
-            {
+            case Constants.PUSHCMD: {
                 try {
                     Messagepush.MessagePush message = Messagepush.MessagePush.parseFrom(pushMessage.buffer);
                     Intent intent = new Intent();
                     intent.setAction(Constants.PUSHACTION);
-                    intent.putExtra("msgfrom", message.from);
-                    intent.putExtra("msgcontent", message.content);
-                    intent.putExtra("msgtopic", message.topic);
+                    intent.putExtra("msgfrom", message.getFrom());
+                    intent.putExtra("msgcontent", message.getContent());
+                    intent.putExtra("msgtopic", message.getTopic());
                     SampleApplicaton.getContext().sendBroadcast(intent);
-                } catch (InvalidProtocolBufferNanoException e) {
+                } catch (Exception e) {
                     Log.e(TAG, "%s", e.toString());
                 }
             }
-                return true;
+            return true;
             default:
                 break;
         }

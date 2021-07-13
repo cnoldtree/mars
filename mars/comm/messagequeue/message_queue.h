@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -21,18 +21,34 @@
 #ifndef MESSAGEQUEUE_H_
 #define MESSAGEQUEUE_H_
 
+#include <string.h>
+#include <string>
+
 #include "boost/function.hpp"
 #include "boost/any.hpp"
 #include "boost/smart_ptr.hpp"
+
+#if UWP //???andrewu temp compile pass
+#include "boost/utility/result_of.hpp"
+#endif
 
 #if __cplusplus >= 201103L
 #include "boost/static_assert.hpp"
 #include "boost/utility/result_of.hpp"
 #include "boost/type_traits/is_same.hpp"
-#endif
+#else 
+#ifdef WIN32
+#include "boost/utility/result_of.hpp"
+#endif // DEBUG
+#endif 
 
 #include "mars/comm/thread/thread.h"
+#include "mars/comm/time_utils.h"
+#include "mars/comm/xlogger/xlogger.h"
+#include "mars/comm/strutil.h"
 
+namespace mars {
+namespace comm {
 namespace MessageQueue {
 
 typedef uint64_t MessageQueue_t;
@@ -55,6 +71,12 @@ struct MessagePost_t {
     bool operator!=(const MessagePost_t& _rhs) const {return !operator==(_rhs);}
     MessageHandler_t reg;
     unsigned int seq;
+    
+    std::string ToString() const {
+        XMessage xmsg;
+        xmsg(TSF"(seq:%_, handler:%_, queue:%_)", seq, reg.seq, reg.queue);
+        return xmsg.String();
+    }
 };
 
 struct MessageTitle_t {
@@ -68,30 +90,55 @@ struct MessageTitle_t {
 
 
 struct Message {
-    Message(): title(0) {}
-    Message(const MessageTitle_t& _title, const boost::any& _body1, const boost::any& _body2)
-        : title(_title), body1(_body1), body2(_body2) {}
-
+    Message(): title(0), anr_timeout(0), create_time(0), execute_time(0) {}
+    Message(const MessageTitle_t& _title, const boost::any& _body1, const boost::any& _body2, const std::string& _name = "")
+    : title(_title), body1(_body1), body2(_body2), anr_timeout(10*60*1000), msg_name(_name), create_time(::gettickcount()),
+    execute_time(0){}
+    
     template <class F>
-    Message(const MessageTitle_t& _title, const F& _func)
-    : title(_title), body1(boost::make_shared<AsyncInvokeFunction>()), body2() {
+    Message(const MessageTitle_t& _title, const F& _func, const std::string& _name = "")
+    : title(_title), body1(boost::make_shared<AsyncInvokeFunction>()), body2(), anr_timeout(10*60*1000), msg_name(_name), create_time(::gettickcount()), execute_time(0) {
+        if (msg_name.empty()){
+            const char* funcname = typeid(_func).name();
+            if (funcname != nullptr){
+                msg_name = funcname;
+            }
+        }
         *boost::any_cast<boost::shared_ptr<AsyncInvokeFunction> >(body1) = _func;
     }
-
+    
+    
     bool operator == (const Message& _rhs) const {return title == _rhs.title;}
 
-    MessageTitle_t title;
-    boost::any body1;
-    boost::any body2;
+    std::string ToString() const {
+        XMessage xmsg;
+        xmsg(TSF"(msg_name:%_, create_time:%_, execute_time:%_)", msg_name, create_time, execute_time);
+        return xmsg.String();
+    }
+    
+    MessageTitle_t  title;
+    boost::any      body1;
+    boost::any      body2;
+    int64_t         anr_timeout;
+    
+    std::string     msg_name;
+    uint64_t        create_time;
+    uint64_t        execute_time;
 };
 
-enum TMessageTiming {
-    kAfter,
-    kPeriod,
-    kImmediately,
-};
     
+const char* const TMessageTimingString[] = {
+    "kAfter",
+    "kPeriod",
+    "kImmediately"
+};
 struct MessageTiming {
+    
+    enum TMessageTiming {
+        kAfter,
+        kPeriod,
+        kImmediately,
+    };
     
     MessageTiming(TMessageTiming _timing, int64_t _after, int64_t _period)
         : type(_timing)
@@ -117,10 +164,22 @@ struct MessageTiming {
         , period(0)
     {}
 
+    std::string ToString() const {
+        XMessage xmsg;
+        xmsg(TSF"(type:%_, after:%_, period:%_)", TMessageTimingString[type], after, period);
+        return xmsg.String();
+    }
+    
     TMessageTiming type;
     int64_t after;
     int64_t period;
 };
+    
+using TMessageTiming = MessageTiming::TMessageTiming;
+const TMessageTiming kAfter = MessageTiming::TMessageTiming::kAfter;
+const TMessageTiming kPeriod = MessageTiming::TMessageTiming::kPeriod;
+const TMessageTiming kImmediately = MessageTiming::TMessageTiming::kImmediately;
+
 
 typedef boost::function<void (const MessagePost_t& _id, Message& _message)> MessageHandler;
 
@@ -136,17 +195,17 @@ MessageQueue_t CurrentThreadMessageQueue();
 MessageQueue_t TID2MessageQueue(thread_tid _tid);
 thread_tid     MessageQueue2TID(MessageQueue_t _id);
 
-const Message& RuningMessage();
+const Message& RunningMessage();
     
-MessagePost_t    RuningMessageID();
-MessagePost_t    RuningMessageID(const MessageQueue_t& _id);
+MessagePost_t    RunningMessageID();
+MessagePost_t    RunningMessageID(const MessageQueue_t& _id);
 MessageQueue_t   GetDefMessageQueue();
 MessageQueue_t   GetDefTaskQueue();
 MessageHandler_t DefAsyncInvokeHandler(const MessageQueue_t& _messagequeue = CurrentThreadMessageQueue());
 
-void WaitForRuningLockEnd(const MessagePost_t&  _message);
-void WaitForRuningLockEnd(const MessageHandler_t&  _handler);
-void WaitForRuningLockEnd(const MessageQueue_t&  _messagequeueid);
+void WaitForRunningLockEnd(const MessagePost_t&  _message);
+void WaitForRunningLockEnd(const MessageHandler_t&  _handler);
+void WaitForRunningLockEnd(const MessageQueue_t&  _messagequeueid);
 void BreakMessageQueueRunloop(const MessageQueue_t&  _messagequeueid);
 
 MessageHandler_t InstallMessageHandler(const MessageHandler& _handler, bool _recvbroadcast = false, const MessageQueue_t& _messagequeueid = GetDefMessageQueue());
@@ -156,17 +215,57 @@ MessagePost_t PostMessage(const MessageHandler_t& _handlerid, const Message& _me
 MessagePost_t SingletonMessage(bool _replace, const MessageHandler_t& _handlerid, const Message& _message, const MessageTiming& _timing = KDefTiming);
 MessagePost_t BroadcastMessage(const MessageQueue_t& _messagequeueid,  const Message& _message, const MessageTiming& _timing = KDefTiming);
 MessagePost_t FasterMessage(const MessageHandler_t& _handlerid, const Message& _message, const MessageTiming& _timing = KDefTiming);
+MessagePost_t PostMessageAtFirst(const MessageHandler_t& _handlerid, const Message& _message);
 
-bool WaitMessage(const MessagePost_t& _message);
+bool WaitMessage(const MessagePost_t& _message, long _timeoutInMs = -1);
 bool FoundMessage(const MessagePost_t& _message);
 
 bool CancelMessage(const MessagePost_t& _postid);
 void CancelMessage(const MessageHandler_t& _handlerid);
 void CancelMessage(const MessageHandler_t& _handlerid, const MessageTitle_t& _title);
 
+std::string DumpMQ(const MessageQueue_t& _msq_queue_id);
 //AsyncInvoke
 MessageHandler_t InstallAsyncHandler(const MessageQueue_t& id);
 
+//---with message name
+    //no title
+template<class F>
+    MessagePost_t AsyncInvoke(const F& _func, const MessageHandler_t& _handlerid = DefAsyncInvokeHandler(), const std::string& _msg_name = "default_name") {
+    return PostMessage(_handlerid, Message(0, _func, _msg_name));
+}
+template<class F>
+MessagePost_t  AsyncInvokeAfter(int64_t _after, const F& _func, const MessageHandler_t& _handlerid = DefAsyncInvokeHandler(), const std::string& _msg_name = "default_name") {
+    return PostMessage(_handlerid, Message(0, _func, _msg_name), MessageTiming(kAfter, _after, 0));
+}
+template<class F>
+MessagePost_t  AsyncInvokePeriod(int64_t _after, int64_t _period, const F& _func, const MessageHandler_t& _handlerid = DefAsyncInvokeHandler(), const std::string& _msg_name = "default_name") {
+    return PostMessage(_handlerid, Message(0, _func, _msg_name), MessageTiming(kPeriod, _after, _period));
+}
+    //~no title
+    //title
+template<class F>
+MessagePost_t  AsyncInvoke(const F& _func, const MessageTitle_t& _title, const MessageHandler_t& _handlerid = DefAsyncInvokeHandler(), const std::string& _msg_name = "default_name") {
+    return PostMessage(_handlerid, Message(_title, _func, _msg_name));
+}
+
+template<class F>
+MessagePost_t  AsyncInvokeAfter(int64_t _after, const F& _func, const MessageTitle_t& _title, const MessageHandler_t& _handlerid = DefAsyncInvokeHandler(), const std::string& _msg_name = "default_name") {
+    return PostMessage(_handlerid, Message(_title, _func, _msg_name), MessageTiming(kAfter, _after, 0));
+}
+
+template<class F>
+MessagePost_t  AsyncInvokePeriod(int64_t _after, int64_t _period, const F& _func, const MessageTitle_t& _title, const MessageHandler_t& _handlerid = DefAsyncInvokeHandler(), const std::string& _msg_name = "default_name") {
+    return PostMessage(_handlerid, Message(_title, _func, _msg_name), MessageTiming(kPeriod, _after, _period));
+}
+
+template<class F>
+MessagePost_t  AsyncInvokeAtFirst(const F& _func, const MessageHandler_t& _handlerid = DefAsyncInvokeHandler(), const std::string& _msg_name = "default_name") {
+    return PostMessageAtFirst(_handlerid, Message(0, _func, _msg_name));
+}
+    //~title
+//---~with message name
+/*
 template<class F>
 MessagePost_t AsyncInvoke(const F& _func, const MessageHandler_t& _handlerid = DefAsyncInvokeHandler()) {
     return PostMessage(_handlerid, Message(0, _func));
@@ -196,11 +295,13 @@ template<class F>
 MessagePost_t  AsyncInvokePeriod(int64_t _after, int64_t _period, const F& _func, const MessageTitle_t& _title, const MessageHandler_t& _handlerid = DefAsyncInvokeHandler()) {
     return PostMessage(_handlerid, Message(_title, _func), MessageTiming(kPeriod, _after, _period));
 }
-    
+    */
 class RunLoop {
  public:
-    template<typename F>
-    RunLoop(const F& _breaker_func):breaker_func_(_breaker_func) {}
+    template<typename B>
+    RunLoop(const B& _breaker_func):breaker_func_(_breaker_func) {}
+    template<typename B, typename D>
+    RunLoop(const B& _breaker_func, const D& _duty_func):breaker_func_(_breaker_func), duty_func_(_duty_func){}
     RunLoop() {}
     
  public:
@@ -212,7 +313,7 @@ class RunLoop {
     
  private:
     boost::function<bool ()> breaker_func_;
-    
+    boost::function<void ()> duty_func_;
 };
     
 class RunloopCond {
@@ -245,6 +346,7 @@ class MessageQueueCreater {
 
     static MessageQueue_t CreateNewMessageQueue(const char* _messagequeue_name = NULL);
     static MessageQueue_t CreateNewMessageQueue(boost::shared_ptr<RunloopCond> _breaker, const char* _messagequeue_name = NULL);
+    static MessageQueue_t CreateNewMessageQueue(boost::shared_ptr<RunloopCond> _breaker, thread_tid _tid);
     static void ReleaseNewMessageQueue(MessageQueue_t _messagequeue_id); // block api
 
   private:
@@ -258,27 +360,29 @@ class MessageQueueCreater {
     Thread                              thread_;
     Mutex                               messagequeue_mutex_;
     MessageQueue_t                      messagequeue_id_;
-    boost::shared_ptr<RunloopCond>   breaker_;
+    boost::shared_ptr<RunloopCond>      breaker_;
 };
 
 template <typename R>
 class AsyncResult {
   private:
     struct AsyncResultWrapper {
-        AsyncResultWrapper(): result_holder(new R), result_valid(false), result(*result_holder) {}
-        AsyncResultWrapper(R& _result): result_holder(NULL), result_valid(false), result(_result) {}
+        AsyncResultWrapper(): result_holder(new R), result_valid(false), result(result_holder) {}
+        AsyncResultWrapper(R* _result): result_holder(NULL), result_valid(false), result(_result) {}
         ~AsyncResultWrapper() {
             if (!result_valid && callback_function)
-                callback_function(result, false);
+                callback_function(*result, false);
+            
+            if (result_holder) delete result_holder;
         }
-
+        
         R*  result_holder;
 
         boost::function<R()> invoke_function;
-        boost::function<void (R&, bool)> callback_function;
+        boost::function<void (const R&, bool)> callback_function;
 
         bool result_valid;
-        R& result;
+        R* result;
     };
 
   public:
@@ -292,7 +396,7 @@ class AsyncResult {
     }
 
     template<typename T>
-    AsyncResult(const T& _func, R& _result_holder)
+    AsyncResult(const T& _func, R* _result_holder)
         : wrapper_(new AsyncResultWrapper(_result_holder)) {
 #if __cplusplus >= 201103L
         BOOST_STATIC_ASSERT(boost::is_same<typename boost::result_of<T()>::type, R>::value);
@@ -311,7 +415,7 @@ class AsyncResult {
     }
 
     template<typename T, typename C>
-    AsyncResult(const T& _func, R& _result_holder, const C& _callback)
+    AsyncResult(const T& _func, const C& _callback, R* _result_holder)
         : wrapper_(new AsyncResultWrapper(_result_holder)) {
 #if __cplusplus >= 201103L
         BOOST_STATIC_ASSERT(boost::is_same<typename boost::result_of<T()>::type, R>::value);
@@ -320,19 +424,18 @@ class AsyncResult {
         wrapper_->callback_function = _callback;
     }
 
-    void operator()() {
-        wrapper_->result = wrapper_->invoke_function();
-        wrapper_->result_valid = true;
-
-        if (wrapper_->callback_function)
-            wrapper_->callback_function(Result(), true);
-    }
-
-    boost::function<R()>& Function() { return wrapper_->invoke_function;}
-    boost::function<void (R&, bool)>& CallFunction() { return wrapper_->callback_function;}
-    R& Result() { return wrapper_->result;}
+    void operator()() const { Invoke(wrapper_->invoke_function()); }
+    R& Result() const { return *(wrapper_->result);}
     operator bool() const { return wrapper_->result_valid;}
 
+  private:
+    void Invoke(const R& _result) const {
+        if (wrapper_->result) *(wrapper_->result) = _result;
+        wrapper_->result_valid = true;
+        
+        if (wrapper_->callback_function) wrapper_->callback_function(_result, true);
+    }
+    
   private:
     AsyncResult& operator=(const AsyncResult&);
     // AsyncResult(const AsyncResult& _ref);
@@ -358,7 +461,7 @@ class AsyncResult<void> {
 
   public:
     template<typename T>
-    AsyncResult(const T& _func)
+    AsyncResult(const T& _func, const void* _place_holder = NULL)
         : wrapper_(new AsyncResultWrapper()) {
 #if __cplusplus >= 201103L
         BOOST_STATIC_ASSERT(boost::is_same<typename boost::result_of<T()>::type, void>::value);
@@ -367,7 +470,7 @@ class AsyncResult<void> {
     }
 
     template<typename T, typename C>
-    AsyncResult(const T& _func, const C& _callback)
+    AsyncResult(const T& _func, const C& _callback, const void* _place_holder = NULL)
         : wrapper_(new AsyncResultWrapper()) {
 #if __cplusplus >= 201103L
         BOOST_STATIC_ASSERT(boost::is_same<typename boost::result_of<T()>::type, void>::value);
@@ -376,7 +479,7 @@ class AsyncResult<void> {
         wrapper_->callback_function = _callback;
     }
 
-    void operator()() {
+    void operator()() const {
         wrapper_->invoke_function();
         wrapper_->result_valid = true;
 
@@ -384,9 +487,7 @@ class AsyncResult<void> {
             wrapper_->callback_function(true);
     }
 
-    boost::function<void ()>& Function() { return wrapper_->invoke_function;}
-    boost::function<void (bool)>& CallFunction() { return wrapper_->callback_function;}
-    void Result() {}
+    void Result() const {}
     operator bool() const { return wrapper_->result_valid;}
 
   private:
@@ -416,7 +517,7 @@ class AsyncResult <R&> {
 
   public:
     template<typename T>
-    AsyncResult(const T& _func)
+    AsyncResult(const T& _func, const void* _place_holder = NULL)
         : wrapper_(new AsyncResultWrapper()) {
 #if __cplusplus >= 201103L
         BOOST_STATIC_ASSERT(boost::is_same<typename boost::result_of<T()>::type, R&>::value);
@@ -425,7 +526,7 @@ class AsyncResult <R&> {
     }
 
     template<typename T, typename C>
-    AsyncResult(const T& _func, const C& _callback)
+    AsyncResult(const T& _func, const C& _callback, const void* _place_holder = NULL)
         : wrapper_(new AsyncResultWrapper()) {
 #if __cplusplus >= 201103L
         BOOST_STATIC_ASSERT(boost::is_same<typename boost::result_of<T()>::type, R&>::value);
@@ -434,7 +535,7 @@ class AsyncResult <R&> {
         wrapper_->callback_function = _callback;
     }
 
-    void operator()() {
+    void operator()() const {
         wrapper_->result = & (wrapper_->invoke_function());
         wrapper_->result_valid = true;
 
@@ -442,9 +543,7 @@ class AsyncResult <R&> {
             wrapper_->callback_function(Result(), true);
     }
 
-    boost::function<R& ()>& Function() { return wrapper_->invoke_function;}
-    boost::function<void (R&, bool)>& CallFunction() { return wrapper_->callback_function;}
-    R& Result() { return *(wrapper_->result);}
+    R& Result() const { return *(wrapper_->result);}
     operator bool() const { return wrapper_->result_valid;}
 
   private:
@@ -474,7 +573,7 @@ class AsyncResult <const R&> {
 
   public:
     template<typename T>
-    AsyncResult(const T& _func)
+    AsyncResult(const T& _func, const void* _place_holder = NULL)
         : wrapper_(new AsyncResultWrapper()) {
 #if __cplusplus >= 201103L
         BOOST_STATIC_ASSERT(boost::is_same<typename boost::result_of<T()>::type, const R&>::value);
@@ -483,7 +582,7 @@ class AsyncResult <const R&> {
     }
 
     template<typename T, typename C>
-    AsyncResult(const T& _func, const C& _callback)
+    AsyncResult(const T& _func, const C& _callback, const void* _place_holder = NULL)
         : wrapper_(new AsyncResultWrapper()) {
 #if __cplusplus >= 201103L
         BOOST_STATIC_ASSERT(boost::is_same<typename boost::result_of<T()>::type, const R&>::value);
@@ -492,7 +591,7 @@ class AsyncResult <const R&> {
         wrapper_->callback_function = _callback;
     }
 
-    void operator()() {
+    void operator()() const {
         wrapper_->result = & (wrapper_->invoke_function());
         wrapper_->result_valid = true;
 
@@ -500,9 +599,7 @@ class AsyncResult <const R&> {
             wrapper_->callback_function(Result(), true);
     }
 
-    boost::function<const R& ()>& Function() { return wrapper_->invoke_function;}
-    boost::function<void (const R&, bool)>& CallFunction() { return wrapper_->callback_function;}
-    const R& Result() { return *(wrapper_->result);}
+    const R& Result() const { return *(wrapper_->result);}
     operator bool() const { return wrapper_->result_valid;}
 
   private:
@@ -514,19 +611,19 @@ class AsyncResult <const R&> {
 };
 
 template <typename R>
-bool  WaitInvoke(const AsyncResult<R>& _func, const MessageHandler_t& _handlerid = DefAsyncInvokeHandler()) {
+    R& WaitInvoke(const AsyncResult<R>& _func, const MessageHandler_t& _handlerid = DefAsyncInvokeHandler(), const std::string& _msg_name="default_name") {
     
     if (CurrentThreadMessageQueue() == Handler2Queue(_handlerid)) {
         _func();
-        return (bool)(_func);
+        return _func.Result();
     } else {
-        WaitMessage(AsyncInvoke(_func, _handlerid));
-        return (bool)(_func);
+        WaitMessage(AsyncInvoke(_func, _handlerid, _msg_name));
+        return _func.Result();
     }
 }
     
 template <typename F>
-typename boost::result_of< F()>::type  WaitInvoke(const F& _func, const MessageHandler_t& _handlerid = DefAsyncInvokeHandler()) {
+typename boost::result_of< F()>::type  WaitInvoke(const F& _func, const MessageHandler_t& _handlerid = DefAsyncInvokeHandler(), const std::string& _msg_name="default_name") {
     
     if (CurrentThreadMessageQueue() == Handler2Queue(_handlerid)) {
         return _func();
@@ -535,16 +632,144 @@ typename boost::result_of< F()>::type  WaitInvoke(const F& _func, const MessageH
         typedef typename boost::result_of<F()>::type R;
         MessageQueue::AsyncResult<R> result(_func);
         
-        WaitMessage(AsyncInvoke(result, _handlerid));
+        WaitMessage(AsyncInvoke(result, _handlerid, _msg_name));
         return result.Result();
+    }
+}
+    
+template <typename F, typename R>
+    R  WaitInvoke(const F& _func, R _ret, long _timeout = -1, const MessageHandler_t& _handlerid = DefAsyncInvokeHandler(), const std::string& _msg_name="default_name") {
+    
+    if (CurrentThreadMessageQueue() == Handler2Queue(_handlerid)) {
+        return _func();
+    } else {
+        // typedef typename boost::result_of<F()>::type R;
+        MessageQueue::AsyncResult<R> result(_func);
+        
+        bool hasRun = WaitMessage(AsyncInvoke(result, _handlerid, _msg_name), _timeout);
+        if(hasRun)
+            return result.Result();
+        else
+            return _ret;
     }
 }
 
 template <typename R>
-MessagePost_t  AsyncInvoke(const AsyncResult<R>& _func, const MessageHandler_t& _handlerid = DefAsyncInvokeHandler()) {
-    return PostMessage(_handlerid, Message(0, _func));
+MessagePost_t  AsyncInvoke(const AsyncResult<R>& _func, const MessageHandler_t& _handlerid = DefAsyncInvokeHandler(), const std::string& _msg_name="default_name") {
+    return PostMessage(_handlerid, Message(0, _func, _msg_name));
 }
     
-} namespace mq = MessageQueue; //namespace MessageQueue
+class ScopeRegister {
+public:
+    ScopeRegister(const MessageHandler_t& _reg);
+    ~ScopeRegister();
+    
+    const MessageHandler_t& Get() const;
+    void Cancel() const;
+    void CancelAndWait() const;
+    
+private:
+    ScopeRegister(const ScopeRegister&);
+    ScopeRegister& operator=(const ScopeRegister&);
+    
+private:
+    MessageHandler_t* m_reg;
+};
 
+//------
+    
+#define MESSAGE_NAME(file, function) (strutil::GetFileNameFromPath(file)+":"+function)
+#define ASYNC_BLOCK_END_MSGNAME(msg_name)  }, AYNC_HANDLER, msg_name);
+
+#define ASYNC_BLOCK_START mars::comm::MessageQueue::AsyncInvoke([=] () {
+#define ASYNC_BLOCK_END ASYNC_BLOCK_END_MSGNAME(MESSAGE_NAME(__FILE__, __FUNCTION__))
+
+
+//------
+#define SYNC2ASYNC_FUNC_MSGNAME(func, msg_name) \
+if (mars::comm::MessageQueue::CurrentThreadMessageQueue() != mars::comm::MessageQueue::Handler2Queue(AYNC_HANDLER)) \
+{ mars::comm::MessageQueue::AsyncInvoke(func, AYNC_HANDLER, msg_name); return; } \
+
+#define SYNC2ASYNC_FUNC(func) SYNC2ASYNC_FUNC_MSGNAME(func, MESSAGE_NAME(__FILE__, __FUNCTION__))
+
+//------
+#define RETURN_SYNC2ASYNC_FUNC_MSGNAME(func, ret, msg_name) \
+if (mars::comm::MessageQueue::CurrentThreadMessageQueue() != mars::comm::MessageQueue::Handler2Queue(AYNC_HANDLER)) \
+{ mars::comm::MessageQueue::AsyncInvoke(func, AYNC_HANDLER, msg_name); return ret; } \
+
+    /*
+     * sync to async, will not wait, but immediately return ret
+     */
+#define RETURN_SYNC2ASYNC_FUNC(func, ret) RETURN_SYNC2ASYNC_FUNC_MSGNAME(func, ret, MESSAGE_NAME(__FILE__, __FUNCTION__))
+   
+    
+//------
+#define RETURN_SYNC2ASYNC_FUNC_TITLE_MSGNAME(func, title, ret, msg_name) \
+if (mars::comm::MessageQueue::CurrentThreadMessageQueue() != mars::comm::MessageQueue::Handler2Queue(AYNC_HANDLER)) \
+{ mars::comm::MessageQueue::AsyncInvoke(func, title, AYNC_HANDLER, msg_name); return ret; } \
+
+#define RETURN_SYNC2ASYNC_FUNC_TITLE(func, title, ret) RETURN_SYNC2ASYNC_FUNC_TITLE_MSGNAME(func, title, ret, MESSAGE_NAME(__FILE__, __FUNCTION__))
+
+//------
+#define RETURN_WAIT_SYNC2ASYNC_FUNC_MSGNAME(func, ret, msg_name) \
+if (mars::comm::MessageQueue::CurrentThreadMessageQueue() != mars::comm::MessageQueue::Handler2Queue(AYNC_HANDLER)) \
+{ mars::comm::MessageQueue::MessagePost_t postId = mars::comm::MessageQueue::AsyncInvoke(func, AYNC_HANDLER, msg_name);mars::comm::MessageQueue::WaitMessage(postId); return ret; } \
+
+    /*
+     * sync to async, wait utils async function end
+     * when wait ends, will return ret
+     */
+#define RETURN_WAIT_SYNC2ASYNC_FUNC(func, ret) RETURN_WAIT_SYNC2ASYNC_FUNC_MSGNAME(func, ret, MESSAGE_NAME(__FILE__, __FUNCTION__))
+    
+//------
+#define WAIT_SYNC2ASYNC_FUNC_MSGNAME(func, msg_name) \
+\
+if (mars::comm::MessageQueue::CurrentThreadMessageQueue() != mars::comm::MessageQueue::Handler2Queue(AYNC_HANDLER)) \
+{\
+return mars::comm::MessageQueue::WaitInvoke(func, AYNC_HANDLER, msg_name);\
+}
+
+    /*
+     * sync to async, wait utils async function end
+     */
+#define WAIT_SYNC2ASYNC_FUNC(func) WAIT_SYNC2ASYNC_FUNC_MSGNAME(func, MESSAGE_NAME(__FILE__, __FUNCTION__))
+    
+//-------
+
+#define WAIT_SYNC2ASYNC_FUNC_MSGNAME_WITH_HOOK(func, pre_lambda, post_lambda, msg_name, ret, timeout) \
+\
+if (mars::comm::MessageQueue::CurrentThreadMessageQueue() != mars::comm::MessageQueue::Handler2Queue(AYNC_HANDLER)) \
+{\
+pre_lambda();\
+auto r = mars::comm::MessageQueue::WaitInvoke(func, ret, timeout, AYNC_HANDLER, msg_name);\
+return post_lambda(r);\
+}
+    
+    /*
+     * sync to async, wait utils async function end
+     * pre_lambda: function will be called before transform to async, will only be called in caller's thread
+     */
+#define WAIT_SYNC2ASYNC_FUNC_WITH_HOOK(func, pre_lambda, post_lambda, ret, timeout) WAIT_SYNC2ASYNC_FUNC_MSGNAME_WITH_HOOK(func, pre_lambda, post_lambda, MESSAGE_NAME(__FILE__, __FUNCTION__), ret, timeout)
+    
+    
+#define WAIT_SYNC2ASYNC_FUNC_MSGNAME_WITH_PREHOOK(func, pre_lambda, msg_name) \
+\
+if (mars::comm::MessageQueue::CurrentThreadMessageQueue() != mars::comm::MessageQueue::Handler2Queue(AYNC_HANDLER)) \
+{\
+pre_lambda();\
+return mars::comm::MessageQueue::WaitInvoke(func, AYNC_HANDLER, msg_name);\
+}
+
+    /*
+     * sync to async, wait utils async function end
+     * pre_lambda: function will be called before transform to async, will only be called in caller's thread
+     */
+#define WAIT_SYNC2ASYNC_FUNC_WITH_PREHOOK(func, pre_lambda) WAIT_SYNC2ASYNC_FUNC_MSGNAME_WITH_PREHOOK(func, pre_lambda, MESSAGE_NAME(__FILE__, __FUNCTION__))
+
+
+// define AYNC_HANDLER in source file
+//#define AYNC_HANDLER handler
+    
+} namespace mq = MessageQueue; //namespace MessageQueue
+}}
 #endif /* MESSAGEQUEUE_H_ */

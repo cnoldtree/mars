@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -34,9 +34,10 @@
 #include "mars/comm/socket/socket_address.h"
 #include "mars/sdt/constants.h"
 
-#include "netchecker_trafficmonitor.h"
+#include "sdt/src/tools/netchecker_trafficmonitor.h"
 
 using namespace mars::sdt;
+using namespace mars::comm;
 
 #define TRAFFIC_LIMIT_RET_CODE (INT_MIN)
 
@@ -52,25 +53,32 @@ static void clearPingStatus(struct PingStatus& _ping_status) {
 
 #define MAXLINE (512) /* max text line length */
 
+static const int kAlarmType = 101;
+
 void str_split(char _spliter, std::string _pingresult, std::vector<std::string>& _vec_pingres) {
     int find_begpos = 0;
     int findpos = 0;
 
     while ((unsigned int)findpos < _pingresult.length()) {
-    	findpos = _pingresult.find_first_of(_spliter, find_begpos);
+        findpos = _pingresult.find_first_of(_spliter, find_begpos);
         _vec_pingres.push_back(std::string(_pingresult, find_begpos, findpos - find_begpos));
         find_begpos = findpos + 1;
     }
 }
 
 int PingQuery::RunPingQuery(int _querycount, int interval/*S*/, int timeout/*S*/, const char* dest, unsigned int packetSize) {  // use popen
+    int rtt(0);
+    return RunPingQuery(_querycount, interval, timeout, dest, packetSize, &rtt);
+}
+
+int PingQuery::RunPingQuery(int _querycount, int interval/*S*/, int timeout/*S*/, const char* dest, unsigned int packetSize, int* rtt) {
     xinfo2(TSF"in runpingquery");
     xassert2(_querycount >= 0, "ping count should be more than 0");
     xassert2(interval >= 0, "interval should be more than 0");
     xassert2(timeout >= 0, "timeout should be more than 0");
 
     if (_querycount == 0)
-    	_querycount = DEFAULT_PING_COUNT;
+        _querycount = DEFAULT_PING_COUNT;
 
     if (interval == 0)
         interval = DEFAULT_PING_INTERVAL;
@@ -162,11 +170,13 @@ int PingQuery::RunPingQuery(int _querycount, int interval/*S*/, int timeout/*S*/
     GetPingStatus(pingStatusTemp);
 
     if (0 == pingStatusTemp.avgrtt && 0 == pingStatusTemp.maxrtt) {
-        xinfo2(TSF"remote host is not available");
+        xinfo2(TSF"remote host is not available, pingresult_:%_", pingresult_);
         return -1;
     }
+    xdebug2("ping rtt: %d, %d", (int)pingStatusTemp.avgrtt, (int)pingStatusTemp.maxrtt);
+    *rtt = static_cast<int>(pingStatusTemp.avgrtt);
 
-    xinfo2(TSF"m_strPingResult = %0", pingresult_);
+    xinfo2(TSF"m_strPingResult = %0, %1", pingresult_, *rtt);
     return 0;
 }
 
@@ -364,7 +374,7 @@ static int Sendto(int fd, const void* ptr, size_t nbytes, int flags, const struc
     int len = 0;
 
     if ((len = (int)sendto(fd, ptr, nbytes, flags, sa, salen)) != (ssize_t) nbytes) {
-        xerror2(TSF"sendto: uncomplete packet");
+        xerror2(TSF"sendto: uncomplete packet, len:%_, nbytes:%_, errno:%_(%_)", len, nbytes, socket_errno, strerror(socket_errno));
     }
 
     return len;
@@ -499,6 +509,7 @@ int PingQuery::__prepareSendAddr(const char* _dest) {
 
     if (ai->ai_family != AF_INET) {
         xinfo2(TSF"unknown address family %0\n", ai->ai_family);
+        freeaddrinfo(ai);
         return -1;
     }
 
@@ -632,13 +643,17 @@ void PingQuery::__onAlarm() {
 int PingQuery::__runReadWrite(int& _errcode) {
     unsigned long timeout_point = timeout_ * 1000 + gettickcount();
     unsigned long send_next = 0;
-
-    while (readcount_ > 0) {
+    
+    int sel_timeout_cnt = 0;
+    while (readcount_ > 0 && sel_timeout_cnt < 10) {
         bool    should_send = false;
 
         if (send_next <= gettickcount() && sendcount_ > 0) {
             send_next = gettickcount() + interval_ * 1000;
             alarm_.Cancel();
+            #ifdef __ANDROID__
+                alarm_.SetType(kAlarmType);
+            #endif
             alarm_.Start(interval_ * 1000);  // m_interval*1000 convert m_interval from s to ms
             should_send = true;
         }
@@ -648,7 +663,7 @@ int PingQuery::__runReadWrite(int& _errcode) {
         sel.Read_FD_SET(sockfd_);
         sel.Exception_FD_SET(sockfd_);
 
-        if (sendcount_ > 0) sel.Write_FD_SET(sockfd_);
+        if (should_send) sel.Write_FD_SET(sockfd_);
 
         long timeoutMs = timeout_point - gettickcount();
 
@@ -663,6 +678,12 @@ int PingQuery::__runReadWrite(int& _errcode) {
             _errcode = sel.Errno();
             return -1;
         }
+        
+        if (sel.IsBreak()){
+            xinfo2(TSF"user breaked");
+            _errcode = EINTR;
+            return -1;
+        }
 
         if (sel.IsException()) {
             xerror2(TSF"socketselect exception");
@@ -672,8 +693,12 @@ int PingQuery::__runReadWrite(int& _errcode) {
 
         if (sel.Exception_FD_ISSET(sockfd_)) {
             _errcode = socket_error(sockfd_);
-
             return -1;
+        }
+        
+        if (0 == retsel){
+            _errcode = ETIMEDOUT;
+            ++sel_timeout_cnt;
         }
 
         if (sel.Write_FD_ISSET(sockfd_) && should_send) {
@@ -703,6 +728,11 @@ int PingQuery::__runReadWrite(int& _errcode) {
     return 0;
 }
 
+int PingQuery::RunPingQuery(int _querycount, int interval/*S*/, int timeout/*S*/, const char* dest, unsigned int packetSize, int* rtt) {
+    *rtt = 1;
+    return RunPingQuery(_querycount, interval, timeout, dest, packetSize);
+}
+    
 int PingQuery::RunPingQuery(int _querycount, int _interval/*S*/, int _timeout/*S*/, const char* _dest, unsigned int _packet_size) {
     xassert2(_querycount >= 0);
     xdebug2(TSF"dest=%0", _dest);
@@ -760,7 +790,9 @@ int PingQuery::RunPingQuery(int _querycount, int _interval/*S*/, int _timeout/*S
 int PingQuery::GetPingStatus(struct PingStatus& _ping_status) {
     clearPingStatus(_ping_status);
     int size = (int)vecrtts_.size();
-    const char* pingIP = socket_address(&sendaddr_).ip();
+
+    socket_address sock_addr(&sendaddr_);
+    const char* pingIP = sock_addr.ip();
     xdebug2(TSF"pingIP=%0", pingIP);
 
     if (pingIP != NULL) {

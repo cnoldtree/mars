@@ -2,26 +2,12 @@
 
 buildscript {
     repositories {
-//        jcenter()
-
         mavenLocal()
-
-        maven {
-            url "http://maven.oa.com/nexus/content/repositories/jcenter"
-        }
-        maven {
-            url "http://maven.oa.com/nexus/content/repositories/android"
-        }
-
-        maven {
-            url 'http://maven.oa.com/nexus/content/repositories/thirdparty/'
-        }
-        maven {
-            url 'http://maven.oa.com/nexus/content/repositories/thirdparty-snapshots/'
-        }
+        google()
+        jcenter()
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:2.2.0'
+        classpath 'com.android.tools.build:gradle:3.4.1'
 
         // NOTE: Do not place your application dependencies here; they belong
         // in the individual module build.gradle files
@@ -31,21 +17,8 @@ buildscript {
 allprojects {
     repositories {
         mavenLocal()
-
-
-        maven {
-            url "http://maven.oa.com/nexus/content/repositories/jcenter"
-        }
-        maven {
-            url "http://maven.oa.com/nexus/content/repositories/android"
-        }
-
-        maven {
-            url 'http://maven.oa.com/nexus/content/repositories/thirdparty/'
-        }
-        maven {
-            url 'http://maven.oa.com/nexus/content/repositories/thirdparty-snapshots/'
-        }
+        google()
+        jcenter()
     }
 }
 
@@ -54,8 +27,8 @@ task clean(type: Delete) {
 }
 
 ext {
-    GROUP = 'com.tencent.mars.sample'
-    VERSION_NAME = '0.2.0'
-    VERSION_NAME_SUFFIX = '-SNAPSHOT'
+    GROUP = 'com.tencent.mars'
+    VERSION_NAME = '1.2.6'
+    VERSION_NAME_SUFFIX = ''
 }
 

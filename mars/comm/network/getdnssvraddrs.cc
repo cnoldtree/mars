@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -19,10 +19,10 @@
 
 #include "comm/network/getdnssvraddrs.h"
 
+namespace mars {
+    namespace comm {
 #ifdef ANDROID
-
 #include <sys/system_properties.h>
-#include <string>
 
 void getdnssvraddrs(std::vector<socket_address>& dnsServers) {
     char buf1[PROP_VALUE_MAX];
@@ -64,7 +64,7 @@ void getdnssvraddrs(std::vector<socket_address>& _dnssvraddrs) {
 #elif defined _WIN32
 #include <stdio.h>
 #include <windows.h>
-#include <Iphlpapi.h>
+#include <IPHlpApi.h>
 
 #pragma comment(lib, "Iphlpapi.lib")
 
@@ -72,19 +72,22 @@ void getdnssvraddrs(std::vector<socket_address>& _dnssvraddrs) {
     FIXED_INFO fi;
     ULONG ulOutBufLen = sizeof(fi);
     
-    if (::GetNetworkParams(&fi, &ulOutBufLen) != ERROR_SUCCESS) {
+    if (GetNetworkParams(&fi, &ulOutBufLen) != ERROR_SUCCESS) {
         return;
     }
     
     IP_ADDR_STRING* pIPAddr = fi.DnsServerList.Next;
     
     while (pIPAddr != NULL) {
-		_dnssvraddrs.push_back(socket_address(pIPAddr->IpAddress.String) );
+		_dnssvraddrs.push_back(socket_address(pIPAddr->IpAddress.String, 53) );
         pIPAddr = pIPAddr->Next;
     }
     
     return;
 }
 #else
-#error "no imp"
+void getdnssvraddrs(std::vector<socket_address>& _dnssvraddrs) {
+}
 #endif
+    }
+}

@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -21,28 +21,26 @@
 #ifndef STN_SRC_NET_CORE_H_
 #define STN_SRC_NET_CORE_H_
 
-#include "mars/comm/autobuffer.h"
+#include <vector>
+#include <string>
+#include <unordered_map>
 
-#include "mars/comm/thread/mutex.h"
 #include "mars/comm/singleton.h"
 #include "mars/comm/messagequeue/message_queue.h"
-#include "mars/comm/messagequeue/message_queue_utils.h"
-#include "mars/stn/config.h"
+
 #include "mars/stn/stn.h"
-
-#include "netsource_timercheck.h"
-#include "net_check_logic.h"
-
+#include "mars/stn/config.h"
 #ifdef USE_LONG_LINK
-#include "longlink.h"
+#include "mars/stn/src/longlink.h"
+#include "mars/stn/src/longlink_metadata.h"
 #endif
 
-class NetSourceTimerCheck;
-
 namespace mars {
+    
     namespace stn {
 
 class NetSource;
+
     
 class ShortLinkTaskManager;
         
@@ -50,6 +48,7 @@ class ShortLinkTaskManager;
 class LongLinkTaskManager;
 class TimingSync;
 class ZombieTaskManager;
+class NetSourceTimerCheck;
 #endif
         
 class SignallingKeeper;
@@ -57,30 +56,59 @@ class NetCheckLogic;
 class DynamicTimeout;
 class AntiAvalanche;
 
+enum {
+    kCallFromLong,
+    kCallFromShort,
+    kCallFromZombie,
+};
+
 class NetCore {
   public:
-    SINGLETON_INTRUSIVE(NetCore, new NetCore, NetCore::__Release);
+    SINGLETON_INTRUSIVE(NetCore, new NetCore, __Release);
 
   public:
     boost::function<void (Task& _task)> task_process_hook_;
+    boost::function<int (int _from, ErrCmdType _err_type, int _err_code, int _fail_handle, const Task& _task)> task_callback_hook_;
     boost::signals2::signal<void (uint32_t _cmdid, const AutoBuffer& _buffer)> push_preprocess_signal_;
 
   public:
+    comm::MessageQueue::MessageQueue_t GetMessageQueueId() { return messagequeue_creater_.GetMessageQueue(); }
+    NetSource& GetNetSourceRef() {return *net_source_;}
+    
+    void    CancelAndWait() { messagequeue_creater_.CancelAndWait(); }
+    
     void    StartTask(const Task& _task);
     void    StopTask(uint32_t _taskid);
     bool    HasTask(uint32_t _taskid) const;
     void    ClearTasks();
     void    RedoTasks();
+    void    RetryTasks(ErrCmdType _err_type, int _err_code, int _fail_handle, uint32_t _src_taskid, std::string _user_id);
 
     void    MakeSureLongLinkConnect();
     bool    LongLinkIsConnected();
     void    OnNetworkChange();
 
+    void	KeepSignal();
+    void	StopSignal();
+
+    ConnectProfile GetConnectProfile(uint32_t _taskid, int _channel_select);
+    void AddServerBan(const std::string& _ip);
+    void SetDebugHost(const std::string& _host);
+    void ForbidLonglinkTlsHost(const std::vector<std::string>& _host);
+
+public:
+    
 #ifdef USE_LONG_LINK
-    SignallingKeeper&    GetSignallingKeeper() {return *signalling_keeper_;}
-    LongLinkTaskManager& GetLongLinkTaskManager() {return *longlink_task_manager_;}
-    NetSourceTimerCheck& GetNetSourceTimerCheck() {return *netsource_timercheck_;}
-    ShortLinkTaskManager& GetShortLinkTaskManager() {return *shortlink_task_manager_;}
+    void DisconnectLongLinkByTaskId(uint32_t _taskid, LongLink::TDisconnectInternalCode _code);
+    std::shared_ptr<LongLink>        CreateLongLink(LonglinkConfig& _config);
+    bool AddMinorLongLink(const std::vector<std::string>& _hosts);
+    void                DestroyLongLink(const std::string& _name);
+    void                MakeSureLongLinkConnect_ext(const std::string& _name);
+    bool                LongLinkIsConnected_ext(const std::string& _name);
+    void                MarkMainLonglink_ext(const std::string& _name);
+    std::shared_ptr<LongLink> DefaultLongLink();
+    std::shared_ptr<LongLinkMetaData> GetLongLink(const std::string& _name);
+    std::shared_ptr<LongLinkMetaData> DefaultLongLinkMeta();
 #endif
 
   private:
@@ -89,47 +117,52 @@ class NetCore {
     static void __Release(NetCore* _instance);
     
   private:
+    void    __InitLongLink();
+    void    __InitShortLink();
+    bool    __ValidAndInitDefault(Task& _task, XLogger& _group);
+    
     int     __CallBack(int _from, ErrCmdType _err_type, int _err_code, int _fail_handle, const Task& _task, unsigned int _taskcosttime);
     void    __OnShortLinkNetworkError(int _line, ErrCmdType _err_type, int _err_code, const std::string& _ip, const std::string& _host, uint16_t _port);
-    void    __OnSessionTimeout(int _err_code, uint32_t _src_taskid);
 
     void    __OnShortLinkResponse(int _status_code);
 
 #ifdef USE_LONG_LINK
-    void    __OnPush(uint32_t _cmdid, uint32_t _taskid, const AutoBuffer& _buf);
-    void    __OnLongLinkNetworkError(int _line, ErrCmdType _err_type, int _err_code, const std::string& _ip, uint16_t _port);
-    void    __OnLongLinkConnStatusChange(LongLink::TLongLinkStatus _status);
-    void    __ResetLongLink();
+    void    __OnLongLinkNetworkError(const std::string& _name, int _line, ErrCmdType _err_type, int _err_code, const std::string& _ip, uint16_t _port);
+    void    __OnLongLinkConnStatusChange(LongLink::TLongLinkStatus _status, const std::string& _channel_id);
 #endif
     
     void    __ConnStatusCallBack();
-    void    __OnTimerCheckSuc();
+    void    __OnTimerCheckSuc(const std::string& _name);
+    
+    void    __OnSignalActive(bool _isactive);
 
+    void    __OnPush(const std::string& _channel_id, uint32_t _cmdid, uint32_t _taskid, const AutoBuffer& _body, const AutoBuffer& _extend);
+    int __ChooseChannel(const Task& _task, std::shared_ptr<LongLinkMetaData> _longlink, std::shared_ptr<LongLinkMetaData> _minorLong);
   private:
     NetCore(const NetCore&);
     NetCore& operator=(const NetCore&);
 
   private:
-    MessageQueue::MessageQueueCreater   messagequeue_creater_;
-    MessageQueue::ScopeRegister         asyncreg_;
-    NetSource*                          net_source_;
-    NetCheckLogic*                      netcheck_logic_;
-    AntiAvalanche*                      anti_avalanche_;
+    comm::MessageQueue::MessageQueueCreater           messagequeue_creater_;
+    comm::MessageQueue::ScopeRegister                 asyncreg_;
+    NetSource*                                  net_source_;
+    NetCheckLogic*                              netcheck_logic_;
+    AntiAvalanche*                              anti_avalanche_;
     
-    DynamicTimeout*                     dynamic_timeout_;
-    ShortLinkTaskManager*               shortlink_task_manager_;
-    int                                 shortlink_error_count_;
+    DynamicTimeout*                             dynamic_timeout_;
+    ShortLinkTaskManager*                       shortlink_task_manager_;
+    int                                         shortlink_error_count_;
 
 #ifdef USE_LONG_LINK
-    ZombieTaskManager*                  zombie_task_manager_;
-    LongLinkTaskManager*                longlink_task_manager_;
-    SignallingKeeper*                   signalling_keeper_;
-    NetSourceTimerCheck*                netsource_timercheck_;
-    TimingSync*                         timing_sync_;
+    ZombieTaskManager*                          zombie_task_manager_;
+    LongLinkTaskManager*                        longlink_task_manager_;
+    
+    TimingSync*                                 timing_sync_;
 #endif
-
-    bool                                shortlink_try_flag_;
-
+    
+    bool                                        shortlink_try_flag_;
+    int all_connect_status_ = 0;
+    int longlink_connect_status_ = 0;
 };
         
 }}

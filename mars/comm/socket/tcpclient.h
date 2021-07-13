@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -30,6 +30,9 @@
 #include "comm/socket/unix_socket.h"
 
 class AutoBuffer;
+
+namespace mars {
+namespace comm {
 
 class MTcpEvent {
   public:
@@ -94,7 +97,7 @@ class TcpClient {
     MTcpEvent& event_;
 
     SOCKET socket_;
-    bool have_read_date_;
+    bool have_read_data_;
     bool will_disconnect_;
     int writedbufid_;
     std::list<AutoBuffer*> lst_buffer_;
@@ -104,10 +107,12 @@ class TcpClient {
     mutable Mutex read_disconnect_mutex_;
     Mutex connect_mutex_;
 
-    SocketSelectBreaker pipe_;
+    SocketBreaker pipe_;
 
     int timeout_;
     volatile TTcpStatus status_;
 };
+}
+}
 
 #endif

@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -37,6 +37,9 @@
 
 #define IPV4_BROADCAST_IP "255.255.255.255"
 
+namespace mars {
+namespace comm {
+
 struct UdpServerSendData;
 class UdpServer;
 
@@ -66,12 +69,14 @@ class UdpServer {
     SOCKET fd_socket_;
     IAsyncUdpServerEvent* event_;
 
-    SocketSelectBreaker breaker_;
+	SocketBreaker breaker_;
     SocketSelect selector_;
     Thread* thread_;
 
     std::list<UdpServerSendData> list_buffer_;
     Mutex mutex_;
 };
+}
+}
 
 #endif /* UDPSERVER_H_ */

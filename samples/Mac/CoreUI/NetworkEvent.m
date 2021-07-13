@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -24,6 +24,10 @@
 
 @implementation NetworkEvent
 
+- (void)addPushObserver:(id<PushNotifyDelegate>)observer withCmdId:(int)cmdId {
+    [pushrecvers setObject:observer forKey:[NSString stringWithFormat:@"%d", cmdId]];
+}
+
 - (void)addObserver:(id<UINotifyDelegate>)observer forKey:(NSString *)key {
     [controllers setObject:observer forKey:key];
 }
@@ -37,6 +41,7 @@
     if(self = [super init]) {
         tasks = [[NSMutableDictionary alloc] init];
         controllers = [[NSMutableDictionary alloc] init];
+        pushrecvers = [[NSMutableDictionary alloc] init];
     }
     
     return self;
@@ -53,7 +58,10 @@
 }
 
 - (void)OnPushWithCmd:(NSInteger)cid data:(NSData *)data {
-    
+    id<PushNotifyDelegate> pushObserver = [pushrecvers objectForKey:[NSString stringWithFormat:@"%ld", (long)cid]];
+    if (pushObserver != nil) {
+        [pushObserver notifyPushMessage:data withCmdId:(int)cid];
+    }
 }
 
 - (NSData*)Request2BufferWithTaskID:(uint32_t)tid task:(CGITask *)task {
@@ -76,7 +84,7 @@
     
     id<UINotifyDelegate> uiObserver = [controllers objectForKey:taskIdKey];
     if (uiObserver != nil) {
-        returnType = [uiObserver notifyUIWithResponse:data];
+        returnType = [uiObserver onPostDecode:data];
     }
     else {
         returnType = -1;
@@ -90,6 +98,8 @@
     NSString *taskIdKey = [NSString stringWithFormat:@"%d", tid];
     
     [tasks removeObjectForKey:taskIdKey];
+    id<UINotifyDelegate> uiObserver = [controllers objectForKey:taskIdKey];
+    [uiObserver onTaskEnd:tid errType:errtype errCode:errcode];
     [controllers removeObjectForKey:taskIdKey];
     
     return 0;

@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -22,13 +22,14 @@
 #define TASK_PROFILE_H_
 
 #include <list>
-#include <sstream>
 
 #include "boost/shared_ptr.hpp"
 
 #include "mars/comm/time_utils.h"
+#include "mars/comm/comm_data.h"
 #include "mars/stn/stn.h"
 #include "mars/stn/config.h"
+#include "mars/comm/socket/unix_socket.h"
 
 namespace mars {
 namespace stn  {
@@ -89,9 +90,14 @@ struct ConnectProfile {
         conn_rtt = 0;
         conn_cost = 0;
         tryip_count = 0;
+        send_request_cost = 0;
+        recv_reponse_cost = 0;
 
         local_ip.clear();
+        local_port = 0;
         ip_index = -1;
+        transport_protocol = Task::kTransportProtocolTCP;
+        link_type = Task::kChannelLong;
         
         disconn_time = 0;
         disconn_errtype = kEctOK;
@@ -103,6 +109,23 @@ struct ConnectProfile {
         noop_profiles.clear();
         if (extension_ptr)
         		extension_ptr->Reset();
+        socket_fd = INVALID_SOCKET;
+        keepalive_timeout = 0;
+        is_reused_fd = false;
+        req_byte_count = 0;
+        cgi.clear();
+        ipv6_connect_failed = false;
+
+        start_connect_time = 0;
+        connect_successful_time = 0;
+        start_tls_handshake_time = 0;
+        tls_handshake_successful_time = 0;
+        start_send_packet_time = 0;
+        start_read_packet_time = 0;
+        read_packet_finished_time = 0;
+		
+        tls_handshake_mismatch = false;
+        tls_handshake_success = false;
     }
     
     std::string net_type;
@@ -119,13 +142,18 @@ struct ConnectProfile {
     unsigned int conn_rtt;
     unsigned long conn_cost;
     int tryip_count;
+    uint64_t send_request_cost;
+    uint64_t recv_reponse_cost;
 
     std::string ip;
     uint16_t port;
     std::string host;
     IPSourceType ip_type;
     std::string local_ip;
+    uint16_t local_port;
     int ip_index;
+    int transport_protocol;
+    int link_type;
     
     uint64_t disconn_time;
     ErrCmdType disconn_errtype;
@@ -137,6 +165,32 @@ struct ConnectProfile {
     std::vector<NoopProfile> noop_profiles;
 
     boost::shared_ptr<ProfileExtension> extension_ptr;
+    mars::comm::ProxyInfo proxy_info;
+
+    //keep alive config
+    SOCKET socket_fd;
+    int (*closefunc)(SOCKET) = &socket_close;
+    SOCKET (*createstream_func)(SOCKET) = nullptr;
+    bool (*issubstream_func)(SOCKET) = nullptr;
+    uint32_t keepalive_timeout;
+    bool is_reused_fd;
+    int local_net_stack;
+    uint64_t req_byte_count;
+    std::string cgi;
+    bool ipv6_connect_failed;
+    //opreator identify
+    std::string connection_identify;
+    bool tls_handshake_mismatch;
+    bool tls_handshake_success;
+	
+	//for cgi caller
+    uint64_t start_connect_time;
+    uint64_t connect_successful_time;
+    uint64_t start_tls_handshake_time;
+    uint64_t tls_handshake_successful_time;
+    uint64_t start_send_packet_time;
+    uint64_t start_read_packet_time;
+    uint64_t read_packet_finished_time;
 };
 
         
@@ -165,7 +219,7 @@ struct TransferProfile {
         error_code = 0;
     }
     
-    const Task& task;
+    const Task task; //change "const Task& task" to "const Task task". fix a memory reuse bug.
     ConnectProfile connect_profile;
     
     uint64_t loop_start_task_time;  // ms
@@ -185,6 +239,19 @@ struct TransferProfile {
     int error_type;
     int error_code;
 };
+    
+//do not insert or delete
+enum TaskFailStep {
+    kStepSucc = 0,
+    kStepDns,
+    kStepConnect,
+    kStepFirstPkg,
+    kStepPkgPkg,
+    kStepDecode,
+    kStepOther,
+    kStepTimeout,
+    kStepServer,
+};
         
 struct TaskProfile {
     
@@ -202,9 +269,12 @@ struct TaskProfile {
         trycount++;
         
         uint64_t task_timeout = (readwritetimeout + 5 * 1000) * trycount;
+        if (_task.long_polling) {
+            task_timeout = (_task.long_polling_timeout + 5 * 1000);
+        }
         
-        if (0 < _task.total_timetout &&  (uint64_t)_task.total_timetout < task_timeout)
-            task_timeout = _task.total_timetout;
+        if (0 < _task.total_timeout &&  (uint64_t)_task.total_timeout < task_timeout)
+            task_timeout = _task.total_timeout;
         
         return  task_timeout;
     }
@@ -212,6 +282,7 @@ struct TaskProfile {
     TaskProfile(const Task& _task):task(_task), transfer_profile(task), task_timeout(ComputeTaskTimeout(_task)), start_task_time(::gettickcount()){
         
         remain_retry_count = task.retry_count;
+        force_no_retry = false;
         
         running_id = 0;
         
@@ -228,6 +299,8 @@ struct TaskProfile {
 
         err_type = kEctOK;
         err_code = 0;
+        link_type = 0;
+        allow_sessiontimeout_retry = true;
     }
     
     void InitSendParam() {
@@ -238,8 +311,20 @@ struct TaskProfile {
     void PushHistory() {
         history_transfer_profiles.push_back(transfer_profile);
     }
+    
+    TaskFailStep GetFailStep() const {
+        if(kEctOK == err_type && 0 == err_code) return kStepSucc;
+        if(kEctDns == err_type) return kStepDns;
+        if(transfer_profile.connect_profile.ip_index == -1) return kStepConnect;
+        if(transfer_profile.last_receive_pkg_time == 0) return kStepFirstPkg;
+        if(kEctEnDecode == err_type)    return kStepDecode;
+        if(kEctSocket == err_type || kEctHttp == err_type || kEctNetMsgXP == err_type)  return kStepPkgPkg;
+        if(kEctLocalTaskTimeout == err_code)    return kStepTimeout;
+        if(kEctServer == err_type || (kEctOK == err_type && err_code != 0))    return kStepServer;
+        return kStepOther;
+    }
 
-    const Task task;
+    Task task;
     TransferProfile transfer_profile;
     intptr_t running_id;
     
@@ -249,6 +334,7 @@ struct TaskProfile {
     uint64_t retry_start_time;
 
     int remain_retry_count;
+    bool force_no_retry;
     
     int last_failed_dyntime_status;
     int current_dyntime_status;
@@ -261,8 +347,10 @@ struct TaskProfile {
     ErrCmdType err_type;
     int err_code;
     int link_type;
+    bool allow_sessiontimeout_retry;
 
     std::vector<TransferProfile> history_transfer_profiles;
+    std::string channel_name;
 };
         
 

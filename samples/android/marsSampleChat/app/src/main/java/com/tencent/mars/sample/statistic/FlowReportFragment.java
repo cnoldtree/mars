@@ -1,5 +1,5 @@
 /*
-* Tencent is pleased to support the open source community by making GAutomator available.
+* Tencent is pleased to support the open source community by making Mars available.
 * Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 *
 * Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -25,16 +25,15 @@ import android.widget.TextView;
 
 import com.tencent.mars.sample.R;
 import com.tencent.mars.sample.core.StatisticHandler;
-import com.tencent.mars.xlog.Log;
 
 /**
  * Created by caoshaokun on 16/12/21.
  */
-public class FlowReportFragment extends Fragment{
+public class FlowReportFragment extends Fragment {
 
     public static String TAG = FlowReportFragment.class.getSimpleName();
 
-    private TextView mTextView;
+    private TextView textView;
 
     @Override
     public void onAttach(Context context) {
@@ -58,8 +57,8 @@ public class FlowReportFragment extends Fragment{
     public void onViewCreated(View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
-        mTextView = (TextView)getActivity().findViewById(R.id.flow_textview);
-        mTextView.setText(String.format("wifiRecv: %d, wifiSend: %d, mobileRecv: %d, mobileSend: %d",
+        textView = (TextView) getActivity().findViewById(R.id.flow_textview);
+        textView.setText(String.format("wifiRecv: %d, wifiSend: %d, mobileRecv: %d, mobileSend: %d",
                 StatisticHandler.wifiRecvFlow, StatisticHandler.wifiSendFlow,
                 StatisticHandler.mobileRecvFlow, StatisticHandler.mobileSendFlow));
 

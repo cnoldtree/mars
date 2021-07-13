@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -24,5 +24,6 @@
 static const int kSayHello = 1;
 static const int kConvLst = 2;
 static const int kSendMsg = 3;
+static const int kPushMessageCmdId = 10001;
 
 #endif /* CommandID_h */

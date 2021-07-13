@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -20,19 +20,11 @@
 #include <exception>
 #include "comm/xlogger/xlogger.h"
 
-#ifdef ANDROID
-#include "comm/android/callstack.h"
-#endif
 
 namespace mars_boost {} namespace boost = mars_boost; namespace mars_boost {
 
     void throw_exception( std::exception const & e ) {
         xfatal2(TSF"boost exception:%_", e.what());
-        
-#ifdef ANDROID
-        char stack[4096] = {0};
-        android_callstack(stack, sizeof(stack));
-        xfatal2(TSF"%_", stack);
-#endif
+
     }
 }

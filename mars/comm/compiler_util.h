@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -36,6 +36,17 @@
 #else
 #error "export"
 #endif
+
+#if defined(_MSC_VER) && defined(MARS_USE_DLLS)
+#ifdef MARS_COMMON_EXPORTS
+#define MARS_COMMON_EXPORT __declspec(dllexport)
+#else
+#define MARS_COMMON_EXPORT __declspec(dllimport)
+#endif
+#else
+#define MARS_COMMON_EXPORT
+#endif
+
 
 #ifndef VARIABLE_IS_NOT_USED
 #ifdef __GNUC__

@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -25,7 +25,7 @@
 #include "mars/comm/bootrun.h"
 #include "mars/sdt/constants.h"
 
-#include "sdt_core.h"
+#include "sdt/src/sdt_core.h"
 
 namespace mars {
 namespace sdt {
@@ -49,7 +49,7 @@ static void onCreate() {
 
 static void onDestroy() {
     xinfo2(TSF"sdt onDestroy");
-    SdtCore::Singleton::Release();
+    SdtCore::Singleton::AsyncRelease();
 }
 
 static void __initbind_baseprjevent() {
@@ -58,7 +58,7 @@ static void __initbind_baseprjevent() {
 	mars::baseevent::addLoadModule(kLibName);
 #endif
 	GetSignalOnCreate().connect(&onCreate);
-	GetSignalOnDestroy().connect(&onDestroy);
+	GetSignalOnDestroy().connect(5, &onDestroy);
 }
 
 BOOT_RUN_STARTUP(__initbind_baseprjevent);
@@ -78,9 +78,10 @@ void SetCallBack(Callback* const callback) {
 
 #ifndef ANDROID
 
-WEAK_FUNC void ReportNetCheckResult(std::vector<CheckResultProfile>& _check_results) {
+void (*ReportNetCheckResult)(const std::vector<CheckResultProfile>& _check_results)
+= [](const std::vector<CheckResultProfile>& _check_results) {
 
-}
+};
 
 #endif
 

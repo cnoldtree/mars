@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -28,6 +28,7 @@
 #include "mars/baseevent/active_logic.h"
 #include "mars/comm/thread/lock.h"
 #include "mars/comm/autobuffer.h"
+#include "mars/comm/comm_data.h"
 #include "mars/comm/xlogger/xlogger.h"
 #include "mars/comm/socket/local_ipstack.h"
 #include "mars/comm/socket/complexconnect.h"
@@ -43,7 +44,6 @@
 
 #include "mars/stn/config.h"
 
-#include "proto/longlink_packer.h"
 #include "smart_heartbeat.h"
 
 #define AYNC_HANDLER  asyncreg_.Get()
@@ -51,6 +51,12 @@
 
 using namespace mars::stn;
 using namespace mars::app;
+using namespace mars::comm;
+
+#ifdef __ANDROID__
+static const int kAlarmNoopInternalType = 103;
+static const int kAlarmNoopTimeOutType = 104;
+#endif
 
 namespace {
 class LongLinkConnectObserver : public MComplexConnect {
@@ -64,11 +70,14 @@ class LongLinkConnectObserver : public MComplexConnect {
     	connecting_index_[_index] = 1;
     }
     virtual void OnConnected(unsigned int _index, const socket_address& _addr, SOCKET _socket, int _error, int _rtt) {
-        if (0 == _error)
-        {}
-        else {
+        if (0 == _error) {
+            if (!OnShouldVerify(_index, _addr)) {
+                connecting_index_[_index] = 0;
+            }
+        } else {
             xwarn2(TSF"index:%_, connnet fail host:%_, iptype:%_", _index, ip_items_[_index].str_host, ip_items_[_index].source_type);
-            xassert2(longlink_.fun_network_report_);
+            //xassert2(longlink_.fun_network_report_);
+            connecting_index_[_index] = 0;
 
             if (longlink_.fun_network_report_) {
                 longlink_.fun_network_report_(__LINE__, kEctSocket, _error, _addr.ip(), _addr.port());
@@ -76,36 +85,41 @@ class LongLinkConnectObserver : public MComplexConnect {
         }
     }
 
-    virtual bool OnShouldVerify(unsigned int _index, const socket_address& _addr) { return true;}
+    virtual bool OnShouldVerify(unsigned int _index, const socket_address& _addr) {
+        return longlink_.Encoder().longlink_complexconnect_need_verify();
+    }
+    
     virtual bool OnVerifySend(unsigned int _index, const socket_address& _addr, SOCKET _socket, AutoBuffer& _buffer_send) {
         AutoBuffer body;
-        longlink_noop_req_body(body);
-        longlink_pack(longlink_noop_cmdid(), Task::kNoopTaskID, body.Ptr(), body.Length(), _buffer_send);
+        AutoBuffer extension;
+        longlink_.Encoder().longlink_noop_req_body(body, extension);
+        longlink_.Encoder().longlink_pack(longlink_.Encoder().longlink_noop_cmdid(), Task::kNoopTaskID, body, extension, _buffer_send, NULL);
         return true;
     }
 
     virtual bool OnVerifyRecv(unsigned int _index, const socket_address& _addr, SOCKET _socket, const AutoBuffer& _buffer_recv) {
+        
+        connecting_index_[_index] = 0;
+        
         uint32_t cmdid = 0;
         uint32_t  taskid = Task::kInvalidTaskID;
         size_t pack_len = 0;
         AutoBuffer bufferbody;
-        int ret = longlink_unpack(_buffer_recv, cmdid, taskid, pack_len, bufferbody);
+        AutoBuffer extension;
+        int ret = longlink_.Encoder().longlink_unpack(_buffer_recv, cmdid, taskid, pack_len, bufferbody, extension, NULL);
 
         if (LONGLINK_UNPACK_OK != ret) {
             xerror2(TSF"0>ret, index:%_, sock:%_, %_, ret:%_, cmdid:%_, taskid:%_, pack_len:%_, recv_len:%_", _index, _socket, _addr.url(), ret, cmdid, taskid, pack_len, _buffer_recv.Length());
+            if (longlink_.fun_network_report_) {
+                longlink_.fun_network_report_(__LINE__, kEctSocket, EBADMSG, _addr.ip(), _addr.port());
+            }
             return false;
         }
 
-        if (Task::kNoopTaskID != taskid) {
-            xwarn2(TSF"index:%_, sock:%_, %_, ret:%_, cmdid:%_, taskid:%_, pack_len:%_, recv_len:%_", _index, _socket, _addr.url(), ret, cmdid, taskid, pack_len, _buffer_recv.Length());
-
-        }
-
-        if (longlink_noop_resp_cmdid() != cmdid) {
+        if (!longlink_.Encoder().longlink_noop_isresp(taskid, cmdid, taskid, bufferbody, extension)) {
             xwarn2(TSF"index:%_, sock:%_, %_, ret:%_, cmdid:%_, taskid:%_, pack_len:%_, recv_len:%_", _index, _socket, _addr.url(), ret, cmdid, taskid, pack_len, _buffer_recv.Length());
         }
 
-        connecting_index_[_index] = 0;
         return true;
     }
     char connecting_index_[32];
@@ -121,18 +135,27 @@ class LongLinkConnectObserver : public MComplexConnect {
 
 }
 
-LongLink::LongLink(NetSource& _netsource, MessageQueue::MessageQueue_t _messagequeueid)
+LongLink::LongLink(const mq::MessageQueue_t& _messagequeueid, NetSource& _netsource, const LonglinkConfig& _config, LongLinkEncoder& _encoder)
     : asyncreg_(MessageQueue::InstallAsyncHandler(_messagequeueid))
     , netsource_(_netsource)
+    , config_(_config)
     , thread_(boost::bind(&LongLink::__Run, this), XLOGGER_TAG "::lonklink")
-#ifdef ANDROID
-    , smartheartbeat_(new SmartHeartbeat)
-#else
-    , smartheartbeat_(NULL)
-#endif
 	, connectstatus_(kConnectIdle)
 	, disconnectinternalcode_(kNone)
-{}
+    , identifychecker_(_encoder, _config.name, Task::kChannelMinorLong == _config.link_type)
+#ifdef ANDROID
+    , smartheartbeat_(new SmartHeartbeat)
+    , wakelock_(new WakeUpLock)
+#else
+    , smartheartbeat_(NULL)
+    , wakelock_(NULL)
+#endif
+    , encoder_(_encoder)
+    , svr_trig_off_(false)
+{
+    xinfo2(TSF"handler:(%_,%_) linktype:%_", asyncreg_.Get().queue, asyncreg_.Get().seq, ChannelTypeString[_config.link_type]);
+    conn_profile_.link_type = _config.link_type;
+}
 
 LongLink::~LongLink() {
     Disconnect(kReset);
@@ -140,30 +163,60 @@ LongLink::~LongLink() {
     if (NULL != smartheartbeat_) {
     	delete smartheartbeat_, smartheartbeat_=NULL;
     }
+#ifdef ANDROID
+    if(NULL != wakelock_) {
+        delete wakelock_, wakelock_ = NULL;
+    }
+#endif
 }
 
-bool LongLink::Send(const unsigned char* _pbuf, size_t _len, uint32_t _cmdid, uint32_t _taskid, const std::string& _task_info) {
+bool LongLink::Send(const AutoBuffer& _body, const AutoBuffer& _extension, const Task& _task) {
     ScopedLock lock(mutex_);
 
     if (kConnected != connectstatus_) return false;
 
-    return __Send(_pbuf, _len, _cmdid, _taskid, _task_info);
+    xassert2(tracker_.get());
+    
+    lstsenddata_.push_back(std::make_pair(_task, move_wrapper<AutoBuffer>(AutoBuffer())));
+    Encoder().longlink_pack(_task.cmdid, _task.taskid, _body, _extension, lstsenddata_.back().second, tracker_.get());
+    lstsenddata_.back().second->Seek(0, AutoBuffer::ESeekStart);
+
+    readwritebreak_.Break();
+    return true;
 }
 
-bool LongLink::SendWhenNoData(const unsigned char* _pbuf, size_t _len, uint32_t _cmdid, uint32_t _taskid) {
+bool LongLink::SendWhenNoData(const AutoBuffer& _body, const AutoBuffer& _extension, uint32_t _cmdid, uint32_t _taskid) {
     ScopedLock lock(mutex_);
 
     if (kConnected != connectstatus_) return false;
     if (!lstsenddata_.empty()) return false;
 
-    return __Send(_pbuf, _len, _cmdid, _taskid, "");
+    xassert2(tracker_.get());
+    
+    Task task(_taskid);
+    task.send_only = true;
+    task.cmdid = _cmdid;
+    task.taskid = _taskid;
+    lstsenddata_.push_back(std::make_pair(task, move_wrapper<AutoBuffer>(AutoBuffer())));
+    Encoder().longlink_pack(_cmdid, _taskid, _body, _extension, lstsenddata_.back().second, tracker_.get());
+    lstsenddata_.back().second->Seek(0, AutoBuffer::ESeekStart);
+    
+    readwritebreak_.Break();
+    return true;
+}
+
+bool LongLink::__SendNoopWhenNoData() {
+    AutoBuffer body;
+    AutoBuffer extension;
+    Encoder().longlink_noop_req_body(body, extension);
+    return  SendWhenNoData(body, extension, Encoder().longlink_noop_cmdid(), Task::kNoopTaskID);
 }
 
 bool LongLink::Stop(uint32_t _taskid) {
     ScopedLock lock(mutex_);
 
-    for (std::list<LongLinkSendData>::iterator it = lstsenddata_.begin(); it != lstsenddata_.end(); ++it) {
-        if (_taskid == it->taskid && 0 == it->data.Pos()) {
+    for (auto it = lstsenddata_.begin(); it != lstsenddata_.end(); ++it) {
+        if (_taskid == it->first.taskid && 0 == it->second->Pos()) {
             lstsenddata_.erase(it);
             return true;
         }
@@ -172,20 +225,13 @@ bool LongLink::Stop(uint32_t _taskid) {
     return false;
 }
 
-bool LongLink::__Send(const unsigned char* _pbuf, size_t _len, uint32_t _cmdid, uint32_t _taskid, const std::string& _task_info) {
-    lstsenddata_.push_back(LongLinkSendData());
 
-    lstsenddata_.back().cmdid = _cmdid;
-    lstsenddata_.back().taskid = _taskid;
-    longlink_pack(_cmdid, _taskid, _pbuf, _len, lstsenddata_.back().data);
-    lstsenddata_.back().data.Seek(0, AutoBuffer::ESeekStart);
-    lstsenddata_.back().task_info = _task_info;
-
-    readwritebreak_.Break();
-    return true;
-}
 
 bool LongLink::MakeSureConnected(bool* _newone) {
+    if(IsSvrTrigOff()) {
+        xwarn2(TSF"make connected but svr trig off");
+        svr_trig_off_ = false;
+    }
     if (_newone) *_newone = false;
 
     ScopedLock lock(mutex_);
@@ -198,10 +244,12 @@ bool LongLink::MakeSureConnected(bool* _newone) {
     if (newone) {
         connectstatus_ = kConnectIdle;
         conn_profile_.Reset();
+        conn_profile_.link_type = config_.link_type;
         identifychecker_.Reset();
         disconnectinternalcode_ = kNone;
         readwritebreak_.Clear();
         connectbreak_.Clear();
+        lstsenddata_.clear();
     }
 
     if (_newone) *_newone = newone;
@@ -213,7 +261,6 @@ void LongLink::Disconnect(TDisconnectInternalCode _scene) {
     xinfo2(TSF"_scene:%_", _scene);
     
     ScopedLock lock(mutex_);
-    lstsenddata_.clear();
 
     if (!thread_.isruning()) return;
 
@@ -244,51 +291,54 @@ bool LongLink::__NoopReq(XLogger& _log, Alarm& _alarm, bool need_active_timeout)
     bool suc = false;
     
     if (identifychecker_.GetIdentifyBuffer(buffer, req_cmdid)) {
-        suc = Send((const unsigned char*)buffer.Ptr(), (int)buffer.Length(), req_cmdid, Task::kLongLinkIdentifyCheckerTaskID);
-        identifychecker_.SetSeq(Task::kLongLinkIdentifyCheckerTaskID);
+        Task task(Task::kLongLinkIdentifyCheckerTaskID);
+        task.cmdid = req_cmdid;
+        suc = Send(buffer, KNullAtuoBuffer, task);
+        identifychecker_.SetID(Task::kLongLinkIdentifyCheckerTaskID);
         xinfo2(TSF"start noop synccheck taskid:%0, cmdid:%1, ", Task::kLongLinkIdentifyCheckerTaskID, req_cmdid) >> _log;
     } else {
-        AutoBuffer body;
-        longlink_noop_req_body(body);
-        suc = SendWhenNoData((const unsigned char*) body.Ptr(), body.Length(), longlink_noop_cmdid(), Task::kNoopTaskID);
-        xinfo2(TSF"start noop taskid:%0, cmdid:%1, ", Task::kNoopTaskID, longlink_noop_cmdid()) >> _log;
+        suc = __SendNoopWhenNoData();
+        xinfo2(TSF"start noop taskid:%0, cmdid:%1, ", Task::kNoopTaskID, Encoder().longlink_noop_cmdid()) >> _log;
     }
     
     if (suc) {
         _alarm.Cancel();
-        _alarm.Start(need_active_timeout ? (2* 1000) : (10 * 1000));
+        _alarm.Start(need_active_timeout ? (5* 1000) : (8 * 1000));
+#ifdef ANDROID
+        wakelock_->Lock(8 * 1000);
+#endif
     } else {
-        xassert2(false, "send noop fail") >> _log;
+        xerror2("send noop fail");
     }
     
     return suc;
 }
 
-bool LongLink::__NoopResp(uint32_t _cmdid, uint32_t _taskid, AutoBuffer& _buf, Alarm& _alarm, ConnectProfile& _profile) {
+bool LongLink::__NoopResp(uint32_t _cmdid, uint32_t _taskid, AutoBuffer& _buf, AutoBuffer& _extension, Alarm& _alarm, bool& _nooping, ConnectProfile& _profile) {
     bool is_noop = false;
     
-    if (identifychecker_.IsIdentifyResp(_taskid)) {
+    if (identifychecker_.IsIdentifyResp(_cmdid, _taskid, _buf, _extension)) {
         xinfo2(TSF"end noop synccheck");
         is_noop = true;
         if (identifychecker_.OnIdentifyResp(_buf)) {
-            fun_network_report_(__LINE__, kEctOK, 0, _profile.ip, _profile.port);
+            if (fun_network_report_)
+                fun_network_report_(__LINE__, kEctOK, 0, _profile.ip, _profile.port);
         }
     }
     
-    if (_cmdid == longlink_noop_resp_cmdid() && Task::kNoopTaskID == _taskid) {
-        longlink_noop_resp_body(_buf);
+    if (Encoder().longlink_noop_isresp(Task::kNoopTaskID, _cmdid, _taskid, _buf, _extension)) {
+        Encoder().longlink_noop_resp_body(_buf, _extension);
         xinfo2(TSF"end noop");
         is_noop = true;
     }
-    else {
-        xassert2(_cmdid != longlink_noop_resp_cmdid() && Task::kNoopTaskID != _taskid);
-    }
     
-    if (is_noop) {
+    if (is_noop && _nooping) {
+        _nooping = false;
         _alarm.Cancel();
         __NotifySmartHeartbeatHeartResult(true, false, _profile);
+        xinfo2(TSF"noop succ, interval:%_", lastheartbeat_);
 #ifdef ANDROID
-        wakelock_.Lock(500);
+        wakelock_->Lock(500);
 #endif
     }
     
@@ -296,13 +346,12 @@ bool LongLink::__NoopResp(uint32_t _cmdid, uint32_t _taskid, AutoBuffer& _buf, A
 }
 
 void LongLink::__RunResponseError(ErrCmdType _error_type, int _error_code, ConnectProfile& _profile, bool _networkreport) {
-    ScopedLock lock(mutex_);
-    lstsenddata_.clear();
-    lock.unlock();
 
     AutoBuffer buf;
-    OnResponse(_error_type, _error_code, 0, Task::kInvalidTaskID, buf, _profile);
-    xassert2(fun_network_report_);
+    AutoBuffer extension;
+    if (OnResponse)
+        OnResponse(config_.name, _error_type, _error_code, 0, Task::kInvalidTaskID, buf, extension, _profile);
+    //xassert2(fun_network_report_);
 
     if (_networkreport && fun_network_report_) fun_network_report_(__LINE__, _error_type, _error_code, _profile.ip, _profile.port);
 }
@@ -316,22 +365,28 @@ void LongLink::__ConnectStatus(TLongLinkStatus _status) {
     xinfo2(TSF"connect status from:%0 to:%1, nettype:%_", connectstatus_, _status, ::getNetInfo());
     connectstatus_ = _status;
     __NotifySmartHeartbeatConnectStatus(connectstatus_);
-    STATIC_RETURN_SYNC2ASYNC_FUNC(boost::bind(boost::ref(SignalConnection), connectstatus_));
+    if (kConnected==connectstatus_ && fun_network_report_)
+        fun_network_report_(__LINE__, kEctOK, 0, conn_profile_.ip, conn_profile_.port);
+    STATIC_RETURN_SYNC2ASYNC_FUNC(boost::bind(boost::ref(SignalConnection), connectstatus_, config_.name));
 }
 
-void LongLink::__UpdateProfile(const ConnectProfile& _conn_profile) {
+void LongLink::__UpdateProfile(const ConnectProfile _conn_profile) {
     STATIC_RETURN_SYNC2ASYNC_FUNC(boost::bind(&LongLink::__UpdateProfile, this, _conn_profile));
+    ConnectProfile profile = conn_profile_;
     conn_profile_ = _conn_profile;
+    conn_profile_.tls_handshake_mismatch = profile.tls_handshake_mismatch;
+    conn_profile_.tls_handshake_success = profile.tls_handshake_success;
     
     if (0 != conn_profile_.disconn_time) broadcast_linkstatus_signal_(conn_profile_);
 }
 
-
-void LongLink::__OnAlarm() {
+void LongLink::__OnAlarm(bool _noop_timeout) {
     readwritebreak_.Break();
+    if (OnNoopAlarmReceived) {
+        OnNoopAlarmReceived(_noop_timeout);
+    }
 #ifdef ANDROID
-    __NotifySmartHeartbeatJudgeMIUIStyle();
-    wakelock_.Lock(3 * 1000);
+    wakelock_->Lock(3 * 1000);
 #endif
 }
 
@@ -339,10 +394,12 @@ void LongLink::__Run() {
     // sync to MakeSureConnected data reset
     {
         ScopedLock lock(mutex_);
+        tracker_.reset(longlink_tracker::Create());
     }
     
     uint64_t cur_time = gettickcount();
-    xinfo_function(TSF"LongLink Rebuild span:%_, net:%_", cur_time - conn_profile_.disconn_time, getNetInfo());
+    xinfo_function(TSF"LongLink Rebuild span:%_, net:%_, channel name:%_, linktype:%_", conn_profile_.disconn_time != 0 ? cur_time - conn_profile_.disconn_time : 0,
+                   getNetInfo(), config_.name, ChannelTypeString[config_.link_type]);
     
     ConnectProfile conn_profile;
     conn_profile.start_time = cur_time;
@@ -352,17 +409,20 @@ void LongLink::__Run() {
     __UpdateProfile(conn_profile);
     
 #ifdef ANDROID
-    wakelock_.Lock(30 * 1000);
+    wakelock_->Lock(40 * 1000);
 #endif
     SOCKET sock = __RunConnect(conn_profile);
 #ifdef ANDROID
-    wakelock_.Lock(1000);
+    wakelock_->Lock(1000);
 #endif
     
     if (INVALID_SOCKET == sock) {
         conn_profile.disconn_time = ::gettickcount();
         conn_profile.disconn_signal = ::getSignal(::getNetInfo() == kWifi);
         __UpdateProfile(conn_profile);
+        
+        ScopedLock lock(mutex_);
+        tracker_.reset();
         return;
     }
     
@@ -378,13 +438,17 @@ void LongLink::__Run() {
     conn_profile.disconn_signal = ::getSignal(::getNetInfo() == kWifi);
     
     __ConnectStatus(kDisConnected);
+    xinfo2(TSF"longlink lifetime:%_", (gettickcount() - conn_profile.conn_time));
     __UpdateProfile(conn_profile);
 
     if (kEctOK != errtype) __RunResponseError(errtype, errcode, conn_profile);
     
 #ifdef ANDROID
-    wakelock_.Lock(1000);
+    wakelock_->Lock(1000);
 #endif
+    
+    ScopedLock lock(mutex_);
+    tracker_.reset();
 }
 
 SOCKET LongLink::__RunConnect(ConnectProfile& _conn_profile) {
@@ -396,13 +460,25 @@ SOCKET LongLink::__RunConnect(ConnectProfile& _conn_profile) {
     std::vector<IPPortItem> ip_items;
     std::vector<socket_address> vecaddr;
 
-    netsource_.GetLongLinkItems(ip_items, dns_util_);
-    xinfo2(TSF"task socket dns ip:%_", NetSource::DumpTable(ip_items));
+    std::vector<std::string> host_list = config_.host_list;
+    netsource_.GetLongLinkItems(ip_items, dns_util_, host_list);
+    mars::comm::ProxyInfo proxy_info = mars::app::GetProxyInfo("");
+    bool use_proxy = proxy_info.IsValid() && mars::comm::kProxyNone != proxy_info.type && mars::comm::kProxyHttp != proxy_info.type && netsource_.GetLongLinkDebugIP().empty();
+    xinfo2(TSF"task socket dns ip:%_ proxytype:%_ useproxy:%_", NetSource::DumpTable(ip_items), proxy_info.type, use_proxy);
     
-    bool isnat64 = ELocalIPStack_IPv6 == local_ipstack_detect();
+    std::string log;
+    std::string netInfo;
+    getCurrNetLabel(netInfo);
+    TLocalIPStack localstack = local_ipstack_detect_log(log);
+    bool isnat64 = ELocalIPStack_IPv6 == localstack;//local_ipstack_detect();
+    xinfo2(TSF"ipstack log:%_, netInfo:%_", log, netInfo);
     
     for (unsigned int i = 0; i < ip_items.size(); ++i) {
-        vecaddr.push_back(socket_address(ip_items[i].str_ip.c_str(), ip_items[i].port).v4tov6_address(isnat64));
+        if (use_proxy) {
+            vecaddr.push_back(socket_address(ip_items[i].str_ip.c_str(), ip_items[i].port));
+        } else {
+            vecaddr.push_back(socket_address(ip_items[i].str_ip.c_str(), ip_items[i].port).v4tov6_address(localstack));
+        }
     }
     
     if (vecaddr.empty()) {
@@ -412,6 +488,7 @@ SOCKET LongLink::__RunConnect(ConnectProfile& _conn_profile) {
         return INVALID_SOCKET;
     }
     
+    _conn_profile.proxy_info = proxy_info;
     _conn_profile.ip_items = ip_items;
     _conn_profile.host = ip_items[0].str_host;
     _conn_profile.ip_type = ip_items[0].source_type;
@@ -421,12 +498,39 @@ SOCKET LongLink::__RunConnect(ConnectProfile& _conn_profile) {
     _conn_profile.dns_endtime = ::gettickcount();
     __UpdateProfile(_conn_profile);
     
+    socket_address* proxy_addr = NULL;
+    
+    //.如果有debugip则不走代理逻辑.
+    if (use_proxy && kIPSourceDebug != _conn_profile.ip_type) {
+        std::string proxy_ip = proxy_info.ip;
+        if (proxy_info.ip.empty() && !proxy_info.host.empty()) {
+            std::vector<std::string> ips;
+            if (!dns_util_.GetDNS().GetHostByName(proxy_info.host, ips) || ips.empty()) {
+                xwarn2(TSF"dns %_ error", proxy_info.host);
+                __ConnectStatus(kConnectFailed);
+                __RunResponseError(kEctDns, kEctDnsMakeSocketPrepared, _conn_profile);
+                return INVALID_SOCKET;
+            }
+            
+			proxy_addr = &((new socket_address(ips.front().c_str(), proxy_info.port))->v4tov6_address(localstack));
+
+        } else {
+			proxy_addr = &((new socket_address(proxy_ip.c_str(), proxy_info.port))->v4tov6_address(localstack));
+        }
+        
+        _conn_profile.ip_type = kIPSourceProxy;
+
+    }
+    
     // set the first ip info to the profiler, after connect, the ip info will be overwrriten by the real one
     
     LongLinkConnectObserver connect_observer(*this, ip_items);
     ComplexConnect com_connect(kLonglinkConnTimeout, kLonglinkConnInteral, kLonglinkConnInteral, kLonglinkConnMax);
-    SOCKET sock = com_connect.ConnectImpatient(vecaddr, connectbreak_, &connect_observer);
-    
+
+    SOCKET sock = com_connect.ConnectImpatient(vecaddr, connectbreak_, &connect_observer, proxy_info.type, proxy_addr, proxy_info.username, proxy_info.password);
+
+    delete proxy_addr;
+ 
     _conn_profile.conn_time = gettickcount();
     _conn_profile.conn_errcode = com_connect.ErrorCode();
     _conn_profile.conn_rtt = com_connect.IndexRtt();
@@ -440,7 +544,6 @@ SOCKET LongLink::__RunConnect(ConnectProfile& _conn_profile) {
         __ConnectStatus(kConnectFailed);
         
         if (kNone == disconnectinternalcode_) __RunResponseError(kEctSocket, kEctSocketMakeSocketPrepared, _conn_profile, false);
-        
         
         return INVALID_SOCKET;
     }
@@ -460,9 +563,13 @@ SOCKET LongLink::__RunConnect(ConnectProfile& _conn_profile) {
     _conn_profile.ip = ip_items[com_connect.Index()].str_ip;
     _conn_profile.port = ip_items[com_connect.Index()].port;
     _conn_profile.local_ip = socket_address::getsockname(sock).ip();
+    _conn_profile.local_port = socket_address::getsockname(sock).port();
     
-    xinfo2(TSF"task socket connect suc sock:%_, host:%_, ip:%_, port:%_, iptype:%_, costtime:%_, rtt:%_, totalcost:%_, index:%_, net:%_",
-           sock, _conn_profile.host, _conn_profile.ip, _conn_profile.port, IPSourceTypeString[_conn_profile.ip_type], com_connect.TotalCost(), com_connect.IndexRtt(), com_connect.IndexTotalCost(), com_connect.Index(), ::getNetInfo());
+    xinfo2(TSF"task socket connect suc sock:%_, host:%_, ip:%_, port:%_, local_ip:%_, local_port:%_, iptype:%_,"
+           "linktype:%_, costtime:%_, rtt:%_, totalcost:%_, index:%_, net:%_",
+           sock, _conn_profile.host, _conn_profile.ip, _conn_profile.port, _conn_profile.local_ip,
+           _conn_profile.local_port, IPSourceTypeString[_conn_profile.ip_type], ChannelTypeString[_conn_profile.link_type],
+           com_connect.TotalCost(), com_connect.IndexRtt(), com_connect.IndexTotalCost(), com_connect.Index(), ::getNetInfo());
     __ConnectStatus(kConnected);
     __UpdateProfile(_conn_profile);
     
@@ -479,16 +586,21 @@ SOCKET LongLink::__RunConnect(ConnectProfile& _conn_profile) {
 }
 
 void LongLink::__RunReadWrite(SOCKET _sock, ErrCmdType& _errtype, int& _errcode, ConnectProfile& _profile) {
-    AutoBuffer bufrecv;
     
-    bool first_noop_sent = false;
+    Alarm alarmnoopinterval(boost::bind(&LongLink::__OnAlarm, this, false), false);
+    Alarm alarmnooptimeout(boost::bind(&LongLink::__OnAlarm, this, true), false);
     
-    Alarm alarmnoopinterval(boost::bind(&LongLink::__OnAlarm, this), false);
-    Alarm alarmnooptimeout(boost::bind(&LongLink::__OnAlarm, this), false);
+#ifdef __ANDROID__
+    alarmnoopinterval.SetType(kAlarmNoopInternalType);
+    alarmnooptimeout.SetType(kAlarmNoopTimeOutType);
+#endif
     
-    std::map <unsigned int, std::string> sent_taskids;
+    std::map <uint32_t, StreamResp> sent_taskids;
     std::vector<LongLinkNWriteData> nsent_datas;
-    bool is_noop = false;
+    
+    AutoBuffer bufrecv;
+    bool first_noop_sent = false;
+    bool nooping = false;
     xgroup2_define(close_log);
     
     while (true) {
@@ -496,26 +608,29 @@ void LongLink::__RunReadWrite(SOCKET _sock, ErrCmdType& _errtype, int& _errcode,
             if (first_noop_sent && alarmnoopinterval.Status() != Alarm::kOnAlarm) {
                 xassert2(false, "noop interval alarm not running");
             }
-            
+          
+            if(first_noop_sent && alarmnoopinterval.Status() == Alarm::kOnAlarm) {
+              __NotifySmartHeartbeatJudgeDozeStyle();
+            }
             xgroup2_define(noop_xlog);
             uint64_t last_noop_interval = alarmnoopinterval.After();
             uint64_t last_noop_actual_interval = (alarmnoopinterval.Status() == Alarm::kOnAlarm) ? alarmnoopinterval.ElapseTime() : 0;
             bool has_late_toomuch = (last_noop_actual_interval >= (15*60*1000));
             
             if (__NoopReq(noop_xlog, alarmnooptimeout, has_late_toomuch)) {
-                is_noop = true;
+                nooping = true;
                 __NotifySmartHeartbeatHeartReq(_profile, last_noop_interval, last_noop_actual_interval);
             }
             
             first_noop_sent = true;
-            
-            uint64_t noop_interval = __GetNextHeartbeatInterval();
-            xinfo2(TSF" last:(%_,%_), next:%_", last_noop_interval, last_noop_actual_interval, noop_interval) >> noop_xlog;
+
+            lastheartbeat_ = __GetNextHeartbeatInterval();
+            xinfo2(TSF" last:(%_,%_), next:%_", last_noop_interval, last_noop_actual_interval, lastheartbeat_) >> noop_xlog;
             alarmnoopinterval.Cancel();
-            alarmnoopinterval.Start((int)noop_interval);
+            alarmnoopinterval.Start((int)lastheartbeat_);
         }
         
-        if (is_noop && (alarmnooptimeout.Status() == Alarm::kInit || alarmnooptimeout.Status() == Alarm::kCancel)) {
+        if (nooping && (alarmnooptimeout.Status() == Alarm::kInit || alarmnooptimeout.Status() == Alarm::kCancel)) {
             xassert2(false, "noop but alarmnooptimeout not running, take as noop timeout");
             _errtype = kEctSocket;
             _errcode = kEctSocketRecvErr;
@@ -537,6 +652,8 @@ void LongLink::__RunReadWrite(SOCKET _sock, ErrCmdType& _errtype, int& _errcode,
         
         if (kNone != disconnectinternalcode_) {
             xwarn2(TSF"task socket close sock:%0, user disconnect:%1, nread:%_, nwrite:%_", _sock, disconnectinternalcode_, socket_nread(_sock), socket_nwrite(_sock)) >> close_log;
+            _errtype = kEctCanceld;
+            _errcode = kEctSocketUserBreak;
             goto End;
         }
         
@@ -562,8 +679,9 @@ void LongLink::__RunReadWrite(SOCKET _sock, ErrCmdType& _errtype, int& _errcode,
             goto End;
         }
         
-        if (is_noop && alarmnooptimeout.Status() == Alarm::kOnAlarm) {
+        if (nooping && alarmnooptimeout.Status() == Alarm::kOnAlarm) {
             xerror2(TSF"task socket close sock:%0, noop timeout, nread:%_, nwrite:%_", _sock, socket_nread(_sock), socket_nwrite(_sock)) >> close_log;
+//            __NotifySmartHeartbeatJudgeDozeStyle();
             _errtype = kEctSocket;
             _errcode = kEctSocketRecvErr;
             goto End;
@@ -582,9 +700,9 @@ void LongLink::__RunReadWrite(SOCKET _sock, ErrCmdType& _errtype, int& _errcode,
             iovec* vecwrite = (iovec*)calloc(lstsenddata_.size(), sizeof(iovec));
             unsigned int offset = 0;
             
-            for (std::list<LongLinkSendData>::iterator it = lstsenddata_.begin(); it != lstsenddata_.end(); ++it) {
-                vecwrite[offset].iov_base = it->data.PosPtr();
-                vecwrite[offset].iov_len = it->data.PosLength();
+            for (auto it = lstsenddata_.begin(); it != lstsenddata_.end(); ++it) {
+                vecwrite[offset].iov_base = it->second->PosPtr();
+                vecwrite[offset].iov_len = it->second->PosLength();
                 
                 ++offset;
             }
@@ -593,7 +711,9 @@ void LongLink::__RunReadWrite(SOCKET _sock, ErrCmdType& _errtype, int& _errcode,
             
             free(vecwrite);
 #else
-            ssize_t writelen = ::send(_sock, lstsenddata_.begin()->data.PosPtr(), lstsenddata_.begin()->data.PosLength(), 0);
+
+            //ssize_t writelen = ::send(_sock, lstsenddata_.begin()->data.PosPtr(), lstsenddata_.begin()->data.PosLength(), 0);
+			ssize_t writelen = ::send(_sock, lstsenddata_.begin()->second->PosPtr(), lstsenddata_.begin()->second->PosLength(), 0);
 #endif
             
             if (0 == writelen || (0 > writelen && !IS_NOBLOCK_SEND_ERRNO(socket_errno))) {
@@ -606,32 +726,32 @@ void LongLink::__RunReadWrite(SOCKET _sock, ErrCmdType& _errtype, int& _errcode,
             }
             
             if (0 > writelen) writelen = 0;
-            
+
             unsigned long long noop_interval = __GetNextHeartbeatInterval();
             alarmnoopinterval.Cancel();
             alarmnoopinterval.Start((int)noop_interval);
-            
             
             xinfo2(TSF"all send:%_, count:%_, ", writelen, lstsenddata_.size()) >> xlog_group;
             
             GetSignalOnNetworkDataChange()(XLOGGER_TAG, writelen, 0);
             
-            std::list<LongLinkSendData>::iterator it = lstsenddata_.begin();
+            auto it = lstsenddata_.begin();
             
             while (it != lstsenddata_.end() && 0 < writelen) {
-                if (0 == it->data.Pos()) OnSend(it->taskid);
+                if (0 == it->second->Pos() && OnSend) OnSend(it->first.taskid);
                 
-                if ((size_t)writelen >= it->data.PosLength()) {
-                    xinfo2(TSF"sub send taskid:%_, cmdid:%_, %_, len(S:%_, %_/%_), ", it->taskid, it->cmdid, it->task_info, it->data.PosLength(), it->data.PosLength(), it->data.Length()) >> xlog_group;
-                    writelen -= it->data.PosLength();
-                    if (!it->task_info.empty()) sent_taskids[it->taskid] = it->task_info;
-                    LongLinkNWriteData nwrite(it->taskid, it->data.PosLength(), it->cmdid, it->task_info);
+                if ((size_t)writelen >= it->second->PosLength()) {
+                    xinfo2(TSF"sub send taskid:%_, cmdid:%_, %_, len(S:%_, %_/%_), ", it->first.taskid, it->first.cmdid, it->first.cgi, it->second->PosLength(), it->second->PosLength(), it->second->Length()) >> xlog_group;
+                    writelen -= it->second->PosLength();
+                    if (!it->first.send_only) { sent_taskids[it->first.taskid].task = it->first; }
+                    
+                    LongLinkNWriteData nwrite(it->second->Length(), it->first);
                     nsent_datas.push_back(nwrite);
                     
                     it = lstsenddata_.erase(it);
                 } else {
-                    xinfo2(TSF"sub send taskid:%_, cmdid:%_, %_, len(S:%_, %_/%_), ", it->taskid, it->cmdid, it->task_info, writelen, it->data.PosLength(), it->data.Length()) >> xlog_group;
-                    it->data.Seek(writelen, AutoBuffer::ESeekCur);
+                    xinfo2(TSF"sub send taskid:%_, cmdid:%_, %_, len(S:%_, %_/%_), ", it->first.taskid, it->first.cmdid, it->first.cgi, writelen, it->second->PosLength(), it->second->Length()) >> xlog_group;
+                    it->second->Seek(writelen, AutoBuffer::ESeekCur);
                     writelen = 0;
                 }
             }
@@ -646,6 +766,7 @@ void LongLink::__RunReadWrite(SOCKET _sock, ErrCmdType& _errtype, int& _errcode,
             if (0 == recvlen) {
                 _errtype = kEctSocket;
                 _errcode = kEctSocketShutdown;
+                svr_trig_off_ = true;
                 xwarn2(TSF"task socket close sock:%0, remote disconnect", _sock) >> close_log;
                 goto End;
             }
@@ -669,8 +790,9 @@ void LongLink::__RunReadWrite(SOCKET _sock, ErrCmdType& _errtype, int& _errcode,
                 uint32_t taskid = Task::kInvalidTaskID;
                 size_t packlen = 0;
                 AutoBuffer body;
+                AutoBuffer extension;
                 
-                int unpackret = longlink_unpack(bufrecv, cmdid, taskid, packlen, body);
+                int unpackret = Encoder().longlink_unpack(bufrecv, cmdid, taskid, packlen, body, extension, tracker_.get());
                 
                 if (LONGLINK_UNPACK_FALSE == unpackret) {
                     xerror2(TSF"task socket recv sock:%0, unpack error dump:%1", _sock, xdump(bufrecv.Ptr(), bufrecv.Length()));
@@ -679,24 +801,41 @@ void LongLink::__RunReadWrite(SOCKET _sock, ErrCmdType& _errtype, int& _errcode,
                     goto End;
                 }
                 
-                xinfo2(TSF"task socket recv sock:%_, pack recv %_ taskid:%_, cmdid:%_, %_, packlen:(%_/%_)", _sock, LONGLINK_UNPACK_CONTINUE == unpackret ? "continue" : "finish", taskid, cmdid, sent_taskids[taskid], LONGLINK_UNPACK_CONTINUE == unpackret ? bufrecv.Length() : packlen, packlen);
+                StreamResp& stream_resp = sent_taskids[taskid];
+                xinfo2(TSF"task socket recv sock:%_, pack recv %_ taskid:%_, cmdid:%_, %_, packlen:(%_/%_)", _sock, LONGLINK_UNPACK_CONTINUE == unpackret ? "continue" : "finish", taskid, cmdid, stream_resp.task.cgi, LONGLINK_UNPACK_CONTINUE == unpackret ? bufrecv.Length() : packlen, packlen);
                 lastrecvtime_.gettickcount();
                 
                 if (LONGLINK_UNPACK_CONTINUE == unpackret) {
-                    OnRecv(taskid, bufrecv.Length(), packlen);
+                    if (OnRecv)
+                        OnRecv(taskid, bufrecv.Length(), packlen);
                     break;
+                }
+                
+                if (stream_resp.stream->Ptr()) {
+                    stream_resp.stream->Write(body);
                 } else {
-                    
-                    sent_taskids.erase(taskid);
-                    
-                    bufrecv.Move(-(int)(packlen));
-                    
-                    if (__NoopResp(cmdid, taskid, body, alarmnooptimeout, _profile)) {
-                        xdebug2(TSF"noopresp span:%0", alarmnooptimeout.ElapseTime());
-                        is_noop = false;
-                    } else {
-                        OnResponse(kEctOK, 0, cmdid, taskid, body, _profile);
-                    }
+                    stream_resp.stream->Attach(body);
+                }
+                
+                if (stream_resp.extension->Ptr()) {
+                    stream_resp.extension->Write(extension);
+                } else {
+                    stream_resp.extension->Attach(extension);
+                }
+                
+                bufrecv.Move(-(int)(packlen));
+                xassert2(   unpackret == LONGLINK_UNPACK_STREAM_END
+                         || unpackret == LONGLINK_UNPACK_OK
+                         || unpackret == LONGLINK_UNPACK_STREAM_PACKAGE,
+                         TSF"unpackret: %_", unpackret);
+                
+                if (LONGLINK_UNPACK_STREAM_PACKAGE == unpackret) {
+                    if (OnRecv)
+                        OnRecv(taskid, packlen, packlen);
+                } else if (!__NoopResp(cmdid, taskid, stream_resp.stream, stream_resp.extension, alarmnooptimeout, nooping, _profile)) {
+                    if (OnResponse)
+                        OnResponse(config_.name, kEctOK, 0, cmdid, taskid, stream_resp.stream, stream_resp.extension, _profile);
+					sent_taskids.erase(taskid);
                 }
             }
         }
@@ -704,7 +843,10 @@ void LongLink::__RunReadWrite(SOCKET _sock, ErrCmdType& _errtype, int& _errcode,
     
     
 End:
-    if (is_noop) __NotifySmartHeartbeatHeartResult(false, false, _profile);
+    if (nooping) {
+        xerror2(TSF"noop fail timeout, interval:%_", lastheartbeat_);
+        __NotifySmartHeartbeatHeartResult(false, (_errcode == kEctSocketRecvErr), _profile);
+    }
         
     std::string netInfo;
     getCurrNetLabel(netInfo );
@@ -717,12 +859,11 @@ End:
         ssize_t maxnwrite = 0;
         for (std::vector<LongLinkNWriteData>::reverse_iterator it = nsent_datas.rbegin(); it != nsent_datas.rend(); ++it) {
             if (nwrite_size <= (maxnwrite + it->writelen)) {
-                xinfo2(TSF"taskid:%_, cmdid:%_, taskid:%_ ; ", it->taskid, it->cmdid, it->taskid) >> close_log;
+                xinfo2(TSF"taskid:%_, cmdid:%_, cgi:%_ ; ", it->task.taskid, it->task.cmdid, it->task.cgi) >> close_log;
                 break;
-            }
-            else {
+            } else {
                 maxnwrite += it->writelen;
-                xinfo2(TSF"taskid:%_, cmdid:%_, task_info:%_ ; ", it->taskid, it->cmdid, it->task_info) >> close_log;
+                xinfo2(TSF"taskid:%_, cmdid:%_, cgi:%_ ; ", it->task.taskid, it->task.cmdid, it->task.cgi) >> close_log;
             }
         }
     }
@@ -743,13 +884,13 @@ End:
 				uint32_t taskid = Task::kInvalidTaskID;
 				size_t packlen = 0;
 				AutoBuffer body;
+				AutoBuffer extension;
 
-				int unpackret = longlink_unpack(bufrecv, cmdid, taskid, packlen, body);
-				xinfo2(TSF"taskid:%_, cmdid:%_, task_info:%_; ", taskid, cmdid, sent_taskids[taskid]) >> close_log;
+				int unpackret = Encoder().longlink_unpack(bufrecv, cmdid, taskid, packlen, body, extension, tracker_.get());
+				xinfo2(TSF"taskid:%_, cmdid:%_, cgi:%_; ", taskid, cmdid, sent_taskids[taskid].task.cgi) >> close_log;
 				if (LONGLINK_UNPACK_CONTINUE == unpackret || LONGLINK_UNPACK_FALSE == unpackret) {
 					break;
-				}
-				else {
+				} else {
 					sent_taskids.erase(taskid);
 					bufrecv.Move(-(int)(packlen));
 				}
@@ -761,12 +902,16 @@ End:
     struct tcp_info _info;
     if (getsocktcpinfo(_sock, &_info) == 0) {
     	char tcp_info_str[1024] = {0};
-    		xinfo2(TSF"task socket close getsocktcpinfo:%_", tcpinfo2str(&_info, tcp_info_str, sizeof(tcp_info_str))) >> close_log;
+        xinfo2(TSF"task socket close getsocktcpinfo:%_", tcpinfo2str(&_info, tcp_info_str, sizeof(tcp_info_str))) >> close_log;
     }
 #endif
 }
 
 void LongLink::__NotifySmartHeartbeatHeartReq(ConnectProfile& _profile, uint64_t _internal, uint64_t _actual_internal) {
+    if (Encoder().longlink_noop_interval() > 0) {
+        return;
+    }
+    
     if (!smartheartbeat_) return;
     
 	NoopProfile noop_profile;
@@ -779,6 +924,10 @@ void LongLink::__NotifySmartHeartbeatHeartReq(ConnectProfile& _profile, uint64_t
 }
 
 void LongLink::__NotifySmartHeartbeatHeartResult(bool _succes, bool _fail_of_timeout, ConnectProfile& _profile) {
+    if (Encoder().longlink_noop_interval() > 0) {
+        return;
+    }
+    
     if (!smartheartbeat_) return;
     
 	if (!_profile.noop_profiles.empty()) {
@@ -786,16 +935,23 @@ void LongLink::__NotifySmartHeartbeatHeartResult(bool _succes, bool _fail_of_tim
 		noop_profile.noop_cost = ::gettickcount() - noop_profile.noop_starttime;
         noop_profile.success = _succes;
 	}
-
 	if (smartheartbeat_) smartheartbeat_->OnHeartResult(_succes, _fail_of_timeout);
 }
 
-void LongLink::__NotifySmartHeartbeatJudgeMIUIStyle() {
+void LongLink::__NotifySmartHeartbeatJudgeDozeStyle() {
+    if (Encoder().longlink_noop_interval() > 0) {
+        return;
+    }
+    
     if (!smartheartbeat_) return;
-	smartheartbeat_->JudgeMIUIStyle();
+	smartheartbeat_->JudgeDozeStyle();
 }
 
 void LongLink::__NotifySmartHeartbeatConnectStatus(TLongLinkStatus _status) {
+    if (Encoder().longlink_noop_interval() > 0) {
+        return;
+    }
+    
     if (!smartheartbeat_) return;
 
     switch (_status) {
@@ -814,8 +970,12 @@ void LongLink::__NotifySmartHeartbeatConnectStatus(TLongLinkStatus _status) {
 }
 
 unsigned int LongLink::__GetNextHeartbeatInterval() {
+    if (Encoder().longlink_noop_interval() > 0) {
+        return Encoder().longlink_noop_interval();
+    }
+    
     if (!smartheartbeat_) return MinHeartInterval;
     
-    bool use_smartheart_beat  = false;
-    return smartheartbeat_->GetNextHeartbeatInterval(use_smartheart_beat);
+    return smartheartbeat_->GetNextHeartbeatInterval();
 }
+

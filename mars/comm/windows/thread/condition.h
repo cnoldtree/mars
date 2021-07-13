@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -25,6 +25,8 @@
 #include "thread/atomic_oper.h"
 #include "thread/lock.h"
 
+namespace mars {
+namespace comm {
 class Condition {
   public:
     Condition(): condition_(), mutex_(), anyway_notify_(0) {
@@ -100,6 +102,7 @@ class Condition {
     volatile unsigned int anyway_notify_;
 };
 
-
+}
+}
 
 #endif

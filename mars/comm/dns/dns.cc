@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -28,6 +28,10 @@
 #include "thread/lock.h"
 
 #include "network/getdnssvraddrs.h"
+#include "socket/local_ipstack.h"
+
+namespace mars {
+namespace comm {
 
 enum {
     kGetIPDoing,
@@ -46,6 +50,11 @@ struct dnsinfo {
     int status;
 };
 
+static std::string DNSInfoToString(const struct dnsinfo& _info) {
+    XMessage msg;
+    msg(TSF"info:%_, threadid:%_, dns:%_, host_name:%_, status:%_", &_info, _info.threadid, _info.dns, _info.host_name, _info.status);
+    return msg.Message();
+}
 static std::vector<dnsinfo> sg_dnsinfo_vec;
 static Condition sg_condition;
 static Mutex sg_mutex;
@@ -72,16 +81,31 @@ static void __GetIP() {
 
     if (NULL == dnsfunc) {
         
+        //
+        xgroup2_define(log_group);
+        std::vector<socket_address> dnssvraddrs;
+        mars::comm::getdnssvraddrs(dnssvraddrs);
+        xinfo2("dns server:") >> log_group;
+        for (std::vector<socket_address>::iterator iter = dnssvraddrs.begin(); iter != dnssvraddrs.end(); ++iter) {
+            xinfo2(TSF"%_:%_ ", iter->ip(), iter->port()) >> log_group;
+        }
+        
+        //
         struct addrinfo hints, *single, *result;
-
         memset(&hints, 0, sizeof(hints));
         hints.ai_family = PF_INET;
         hints.ai_socktype = SOCK_STREAM;
         //in iOS work fine, in Android ipv6 stack get ipv4-ip fail
         //and in ipv6 stack AI_ADDRCONFIGd will filter ipv4-ip but we ipv4-ip can use by nat64
     //    hints.ai_flags = AI_V4MAPPED|AI_ADDRCONFIG;
-        int error = getaddrinfo(host_name.c_str(), NULL, &hints, &result);
-
+        int error = 0;
+        TLocalIPStack ipstack = local_ipstack_detect();
+        if (ELocalIPStack_IPv4 == ipstack) {
+            error = getaddrinfo(host_name.c_str(), NULL, &hints, &result);
+        } else {
+            error = getaddrinfo(host_name.c_str(), NULL, /*&hints*/NULL, &result);
+        }
+           
         lock.lock();
 
         iter = sg_dnsinfo_vec.begin();
@@ -92,7 +116,7 @@ static void __GetIP() {
         }
 
         if (error != 0) {
-            xwarn2(TSF"error, error:%0, hostname:%1", error, host_name.c_str());
+            xwarn2(TSF"error, error:%_/%_, hostname:%_, ipstack:%_", error, strerror(error), host_name.c_str(), ipstack);
 
             if (iter != sg_dnsinfo_vec.end()) iter->status = kGetIPFail;
 
@@ -105,40 +129,34 @@ static void __GetIP() {
             }
 
             for (single = result; single; single = single->ai_next) {
-                if (PF_INET != single->ai_family) {
-                    xassert2(false);
-                    continue;
-                }
-
-                sockaddr_in* addr_in = (sockaddr_in*)single->ai_addr;
-                struct in_addr convertAddr;
-
                 // In Indonesia, if there is no ipv6's ip, operators return 0.0.0.0.
-                if (INADDR_ANY == addr_in->sin_addr.s_addr || INADDR_NONE == addr_in->sin_addr.s_addr) {
-                    xwarn2(TSF"hehe, addr_in->sin_addr.s_addr:%0", addr_in->sin_addr.s_addr);
-                    continue;
+                if (PF_INET == single->ai_family) {
+                    sockaddr_in* addr_in = (sockaddr_in*)single->ai_addr;
+//                    struct in_addr convertAddr;
+                    if (INADDR_ANY == addr_in->sin_addr.s_addr || INADDR_NONE == addr_in->sin_addr.s_addr) {
+                        xwarn2(TSF"hehe, addr_in->sin_addr.s_addr:%0", addr_in->sin_addr.s_addr);
+                        continue;
+                    }
                 }
 
-                convertAddr.s_addr = addr_in->sin_addr.s_addr;
-    			const char* ip = socket_address(convertAddr).ip();
 
-                if (!socket_address(ip, 0).valid()) {
+//                convertAddr.s_addr = addr_in->sin_addr.s_addr;
+                socket_address sock_addr(single->ai_addr);
+                const char* ip = sock_addr.ip();
+
+                if (!socket_address(ip, 0).valid_server_address(false, true)) {
                     xerror2(TSF"ip is invalid, ip:%0", ip);
                     continue;
                 }
 
                 iter->result.push_back(ip);
             }
-
-            if(iter->result.empty()) {
-                xgroup2_define(log_group);
-                std::vector<socket_address> dnssvraddrs;
-                getdnssvraddrs(dnssvraddrs);
-                
-                xinfo2("dns server:") >> log_group;
-                for (std::vector<socket_address>::iterator iter = dnssvraddrs.begin(); iter != dnssvraddrs.end(); ++iter) {
-                    xinfo2(TSF"%_:%_ ", iter->ip(), iter->port()) >> log_group;
-                }
+            
+            //
+            xgroup2_define(ip_group);
+            xinfo2(TSF"host %_ resolved iplist: ", host_name) >> ip_group;
+            for(auto ip : iter->result){
+                xinfo2(TSF"%_,", ip) >> ip_group;
             }
             
             freeaddrinfo(result);
@@ -231,18 +249,30 @@ bool DNS::GetHostByName(const std::string& _host_name, std::vector<std::string>&
             }
 
             if (kGetIPSuc == it->status) {
-                ips = it->result;
+                if (_host_name==it->host_name) {
+                    ips = it->result;
 
-                if (_breaker) _breaker->dnsstatus = NULL;
+                    if (_breaker) _breaker->dnsstatus = NULL;
 
-                sg_dnsinfo_vec.erase(it);
-                return true;
+                    sg_dnsinfo_vec.erase(it);
+                    return true;
+                } else {
+                    std::vector<dnsinfo>::iterator iter = sg_dnsinfo_vec.begin();
+                    int i = 0;
+                    for (; iter != sg_dnsinfo_vec.end(); ++iter) {
+                        xerror2(TSF"sg_info_vec[%_]:%_", i++, DNSInfoToString(*iter));
+                    }
+                    if (monitor_func_)
+                        monitor_func_(kDNSThreadIDError);
+                    xassert2(false, TSF"_host_name:%_, it->host_name:%_", _host_name, it->host_name);
+                    return false;
+                }
             }
 
             if (kGetIPTimeout == it->status || kGetIPCancel == it->status || kGetIPFail == it->status) {
                 if (_breaker) _breaker->dnsstatus = NULL;
 
-                xinfo2(TSF "dns get ip status:%_", it->status);
+                xinfo2(TSF "dns get ip status:%_ host:%_, func:%_", it->status, it->host_name, it->dns_func);
                 sg_dnsinfo_vec.erase(it);
                 return false;
             }
@@ -272,7 +302,6 @@ void DNS::Cancel(const std::string& _host_name) {
 
         if (info.host_name.compare(_host_name) == 0 && info.dns == this) {
             info.status = kGetIPCancel;
-            break;
         }
     }
 
@@ -286,4 +315,7 @@ void DNS::Cancel(DNSBreaker& _breaker) {
     if (_breaker.dnsstatus) *(_breaker.dnsstatus) = kGetIPCancel;
 
     sg_condition.notifyAll();
+}
+
+}
 }

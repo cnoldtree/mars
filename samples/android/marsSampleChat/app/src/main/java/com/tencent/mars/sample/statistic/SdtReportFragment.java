@@ -1,5 +1,5 @@
 /*
-* Tencent is pleased to support the open source community by making GAutomator available.
+* Tencent is pleased to support the open source community by making Mars available.
 * Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 *
 * Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -27,7 +27,6 @@ import com.tencent.mars.sample.R;
 import com.tencent.mars.sample.core.StatisticHandler;
 import com.tencent.mars.sdt.SdtLogic;
 import com.tencent.mars.sdt.SignalDetectResult;
-import com.tencent.mars.xlog.Log;
 
 import java.util.ArrayList;
 import java.util.concurrent.LinkedBlockingDeque;
@@ -35,19 +34,19 @@ import java.util.concurrent.LinkedBlockingDeque;
 /**
  * Created by caoshaokun on 16/12/21.
  */
-public class SdtReportFragment extends Fragment{
+public class SdtReportFragment extends Fragment {
 
     public static String TAG = SdtReportFragment.class.getSimpleName();
 
     String[] detectTypes = new String[] {
-      "PingCheck", "DnsCheck", "NewDnsCheck", "TcpCheck", "HttpCheck"
+        "PingCheck", "DnsCheck", "NewDnsCheck", "TcpCheck", "HttpCheck"
     };
 
     String[] tableTitles = new String[] {
-            "detectType", "detail"
+        "detectType", "detail"
     };
 
-    private ListView mListView;
+    private ListView listView;
     private StatisticsAdapter adapter;
 
     ArrayList<StatisticsAdapter.TableRow> table = new ArrayList<>();
@@ -73,11 +72,11 @@ public class SdtReportFragment extends Fragment{
     public void onViewCreated(View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
-        mListView = (ListView)getActivity().findViewById(R.id.sdtprofile_listview);
+        listView = (ListView) getActivity().findViewById(R.id.sdtprofile_listview);
 
         initData(StatisticHandler.sdtResults);
         adapter = new StatisticsAdapter(this.getActivity(), table);
-        mListView.setAdapter(adapter);
+        listView.setAdapter(adapter);
     }
 
     @Override
@@ -125,9 +124,9 @@ public class SdtReportFragment extends Fragment{
                 }
 
             }
-        }
-        catch (Exception e) {
 
+        } catch (Exception e) {
+            //
         }
 
 

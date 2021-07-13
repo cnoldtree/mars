@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -23,13 +23,16 @@
 #include <string>
 #include <stdint.h>
 
+#include "mars/comm/comm_data.h"
+
 namespace mars {
 namespace app {
 
 struct AccountInfo {
-	AccountInfo():uin(0){}
+	AccountInfo():uin(0), is_logoned(false){}
 	int64_t uin;
 	std::string username;
+	bool is_logoned;
 };
 
 struct DeviceInfo {
@@ -37,12 +40,14 @@ struct DeviceInfo {
 	std::string devicetype;
 };
     
+extern mars::comm::ProxyInfo GetProxyInfo(const std::string& _host);
 extern std::string GetAppFilePath();
 extern AccountInfo GetAccountInfo();
 extern std::string GetUserName();
 extern std::string GetRecentUserName();
 extern unsigned int GetClientVersion();
 extern DeviceInfo GetDeviceInfo();
+extern double GetOsVersion();
 }}
 
 #endif /* APPCOMM_INTERFACE_APPCOMM_H_ */

@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -33,6 +33,7 @@
 #include "longlink_speed_test.h"
 
 using namespace mars::stn;
+using namespace mars::comm;
 
 static const unsigned int kTimeCheckPeriod = 2.5 * 60 * 1000;     // 2.5min
 // const static unsigned int TIME_CHECK_PERIOD = 30 * 1000;     //30min
@@ -49,7 +50,7 @@ NetSourceTimerCheck::NetSourceTimerCheck(NetSource* _net_source, ActiveLogic& _a
     , longlink_(_longlink)
 	, asyncreg_(MessageQueue::InstallAsyncHandler(_messagequeue_id)){
     xassert2(breaker_.IsCreateSuc(), "create breaker fail");
-
+        xinfo2(TSF"handler:(%_,%_)", asyncreg_.Get().queue, asyncreg_.Get().seq);
     frequency_limit_ = new CommFrequencyLimit(kMaxSpeedTestCount, kIntervalTime);
 
     active_connection_ = _active_logic.SignalActive.connect(boost::bind(&NetSourceTimerCheck::__OnActiveChanged, this, _1));
@@ -79,7 +80,7 @@ NetSourceTimerCheck::~NetSourceTimerCheck() {
 
 void NetSourceTimerCheck::CancelConnect() {
 	RETURN_NETCORE_SYNC2ASYNC_FUNC(boost::bind(&NetSourceTimerCheck::CancelConnect, this));
-    xdebug_function();
+    xinfo_function();
 
     if (!thread_.isruning()) {
         return;
@@ -98,15 +99,14 @@ void NetSourceTimerCheck::__StartCheck() {
 
     if (asyncpost_ != MessageQueue::KNullPost) return;
 
-    asyncpost_ = MessageQueue::AsyncInvokePeriod(kTimeCheckPeriod, kTimeCheckPeriod, boost::bind(&NetSourceTimerCheck::__Check, this), asyncreg_.Get());
+    asyncpost_ = MessageQueue::AsyncInvokePeriod(kTimeCheckPeriod, kTimeCheckPeriod, boost::bind(&NetSourceTimerCheck::__Check, this), asyncreg_.Get(), "NetSourceTimerCheck::__Check()");
 
 }
 
 void NetSourceTimerCheck::__Check() {
 
     IPSourceType pre_iptype = longlink_.Profile().ip_type;
-    if (kIPSourceDebug == pre_iptype || kIPSourceNULL == pre_iptype
-    		|| kIPSourceNewDns == pre_iptype || kIPSourceDNS == pre_iptype) {
+    if (kIPSourceBackup != pre_iptype) {
     	return;
     }
 
@@ -181,6 +181,12 @@ bool NetSourceTimerCheck::__TryConnnect(const std::string& _host) {
     if (ip_vec.empty()) dns_util_.GetDNS().GetHostByName(_host, ip_vec);
     if (ip_vec.empty()) return false;
 
+    for (std::vector<std::string>::iterator iter = ip_vec.begin(); iter != ip_vec.end(); ++iter) {
+    	if (*iter == longlink_.Profile().ip) {
+    		return false;
+    	}
+    }
+
     std::vector<uint16_t> port_vec;
     NetSource::GetLonglinkPorts(port_vec);
 
@@ -209,6 +215,7 @@ bool NetSourceTimerCheck::__TryConnnect(const std::string& _host) {
 
         if (select_ret < 0) {
             xerror2(TSF"select errror, ret:%0, strerror(errno):%1", select_ret, strerror(errno));
+            break;
         }
 
         if (seletor_.IsException()) {
@@ -241,6 +248,8 @@ bool NetSourceTimerCheck::__TryConnnect(const std::string& _host) {
 }
 
 void NetSourceTimerCheck::__OnActiveChanged(bool _is_active) {
+    ASYNC_BLOCK_START
+    
     xdebug2(TSF"_is_active:%0", _is_active);
 
     if (_is_active) {
@@ -248,4 +257,6 @@ void NetSourceTimerCheck::__OnActiveChanged(bool _is_active) {
     } else {
     	__StopCheck();
     }
+    
+    ASYNC_BLOCK_END
 }

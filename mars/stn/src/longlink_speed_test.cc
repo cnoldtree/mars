@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -30,6 +30,7 @@
 #include "mars/stn/proto/longlink_packer.h"
 
 using namespace mars::stn;
+using namespace mars::comm;
 
 static const unsigned int kCmdIdOutOfBand = 72;
 static const int kTimeout = 10*1000;  // s
@@ -43,9 +44,10 @@ LongLinkSpeedTestItem::LongLinkSpeedTestItem(const std::string& _ip, uint16_t _p
     , after_connect_time_(0) {
         
     AutoBuffer body;
-    longlink_noop_req_body(body);
+    AutoBuffer extension;
+    gDefaultLongLinkEncoder.longlink_noop_req_body(body, extension);
 
-    longlink_pack(longlink_noop_cmdid(), Task::kNoopTaskID, body.Ptr(), body.Length(), req_ab_);
+    gDefaultLongLinkEncoder.longlink_pack(gDefaultLongLinkEncoder.longlink_noop_cmdid(), Task::kNoopTaskID, body, extension, req_ab_, NULL);
     req_ab_.Seek(0, AutoBuffer::ESeekStart);
 
     socket_ = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -56,9 +58,10 @@ LongLinkSpeedTestItem::LongLinkSpeedTestItem(const std::string& _ip, uint16_t _p
     }
 
     // set the socket to unblocked model
-    if (0 != socket_ipv6only(socket_, 0)){
-        xwarn2(TSF"set ipv6only failed. error %_",strerror(socket_errno));
-    }
+#ifdef _WIN32 
+    if (0 != socket_ipv6only(socket_, 0)){ xwarn2(TSF"set ipv6only failed. error %_",strerror(socket_errno)); }
+#endif
+        
     int ret = socket_set_nobio(socket_);
 
     if (ret != 0) {
@@ -82,7 +85,9 @@ LongLinkSpeedTestItem::LongLinkSpeedTestItem(const std::string& _ip, uint16_t _p
 
     before_connect_time_ = gettickcount();
 
-    ::connect(socket_, (sockaddr*)&_addr, sizeof(_addr));
+    if (0 !=::connect(socket_, (sockaddr*)&_addr, sizeof(_addr))) {
+        xerror2(TSF "connect fail");
+    }
 }
 
 LongLinkSpeedTestItem::~LongLinkSpeedTestItem() {
@@ -197,8 +202,9 @@ int LongLinkSpeedTestItem::__HandleSpeedTestResp() {
         uint32_t anSeq = 0;
         uint32_t anCmdID = 0;
         AutoBuffer body;
+        AutoBuffer extension;
         
-        int nRet  = longlink_unpack(resp_ab_, anCmdID, anSeq, pacLength, body);
+        int nRet  = gDefaultLongLinkEncoder.longlink_unpack(resp_ab_, anCmdID, anSeq, pacLength, body, extension, NULL);
 
         if (LONGLINK_UNPACK_FALSE == nRet) {
             xerror2(TSF"longlink_unpack false");
@@ -215,7 +221,7 @@ int LongLinkSpeedTestItem::__HandleSpeedTestResp() {
 
             resp_ab_.Reset();
             return kLongLinkSpeedTestOOB;
-        } else if (longlink_noop_resp_cmdid() == anCmdID && Task::kNoopTaskID == anSeq) {
+        } else if (gDefaultLongLinkEncoder.longlink_noop_isresp(Task::kNoopTaskID, anCmdID, anSeq, body, extension)) {
             return kLongLinkSpeedTestSuc;
         } else {
             xassert2(false);

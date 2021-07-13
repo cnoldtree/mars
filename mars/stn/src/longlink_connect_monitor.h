@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -21,38 +21,49 @@
 #ifndef STN_SRC_LONGLINK_CONNECT_MONITOR_H_
 #define STN_SRC_LONGLINK_CONNECT_MONITOR_H_
 
+#include <string>
+
 #include "mars/comm/thread/mutex.h"
 #include "mars/comm/thread/thread.h"
+#include "mars/comm/messagequeue/message_queue.h"
 #include "mars/comm/alarm.h"
 
 #include "longlink.h"
 
-class ActiveLogic;
 
 namespace mars {
+namespace comm {
+    class ActiveLogic;
+}
     namespace stn {
         
 class LongLinkConnectMonitor {
+
   public:
-    LongLinkConnectMonitor(ActiveLogic& _activelogic, LongLink& _longlinkk, MessageQueue::MessageQueue_t _id);
+    LongLinkConnectMonitor(comm::ActiveLogic& _activelogic, LongLink& _longlinkk, comm::MessageQueue::MessageQueue_t _id, bool _is_keep_alive);
     ~LongLinkConnectMonitor();
 
   public:
     bool MakeSureConnected();
     bool NetworkChange();
 
+    void OnHeartbeatAlarmSet(uint64_t _interval);
+    void OnHeartbeatAlarmReceived(bool _is_noop_timeout);
+
+    void DisconnectAllSlot();
+
   public:
     boost::function<void ()> fun_longlink_reset_;
 
   private:
-    unsigned long  __IntervalConnect(int _type);
-    unsigned long  __AutoIntervalConnect();
+    uint64_t  __IntervalConnect(int _type);
+    uint64_t  __AutoIntervalConnect();
 
   private:
     void __OnSignalForeground(bool _isforeground);
     void __OnSignalActive(bool _isactive);
-    void __OnLongLinkStatuChanged(LongLink::TLongLinkStatus _status);
-    void __OnAlarm();
+    void __OnLongLinkStatuChanged(LongLink::TLongLinkStatus _status, const std::string& _channel_id);
+    void __OnAlarm(bool _rebuild_longlink);
 
     void __Run();
 #ifdef __APPLE__
@@ -66,20 +77,25 @@ class LongLinkConnectMonitor {
     LongLinkConnectMonitor& operator=(const LongLinkConnectMonitor&);
 
   private:
-    ActiveLogic& activelogic_;
+    comm::MessageQueue::ScopeRegister     asyncreg_;
+    comm::ActiveLogic& activelogic_;
     LongLink& longlink_;
-    Alarm         alarm_;
-    Mutex         mutex_;
+    comm::Alarm         rebuild_alarm_;
+    comm::Alarm         wake_alarm_;
+    comm::Mutex         mutex_;
 
     LongLink::TLongLinkStatus status_;
     uint64_t last_connect_time_;
     int last_connect_net_type_;
 
-    Thread thread_;
-    Mutex testmutex_;
+    comm::Thread thread_;
+    comm::Mutex testmutex_;
 
     int conti_suc_count_;
     bool isstart_;
+    bool is_keep_alive_;
+    int current_interval_index_;
+    bool rebuild_longlink_;
 };
         
 } }

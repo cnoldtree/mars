@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -28,7 +28,6 @@
 #include "boost/function.hpp"
 
 #include "mars/comm/messagequeue/message_queue.h"
-#include "mars/comm/messagequeue/message_queue_utils.h"
 #include "mars/stn/stn.h"
 
 struct ZombieTask;
@@ -42,7 +41,7 @@ class ZombieTaskManager {
     boost::function<int (ErrCmdType _errtype, int _errcode, int _fail_handle, const Task& _task, unsigned int _taskcosttime)> fun_callback_;
 
   public:
-    ZombieTaskManager(MessageQueue::MessageQueue_t _messagequeueid);
+    ZombieTaskManager(comm::MessageQueue::MessageQueue_t _messagequeueid);
     ~ZombieTaskManager();
 
     bool SaveTask(const Task& _task, unsigned int _taskcosttime /*ms*/);
@@ -61,7 +60,7 @@ class ZombieTaskManager {
     void __TimerChecker();
 
   private:
-    MessageQueue::ScopeRegister m_asyncreg;
+    comm::MessageQueue::ScopeRegister asyncreg_;
     std::list<ZombieTask> lsttask_;
     uint64_t net_core_last_start_task_time_;
 };

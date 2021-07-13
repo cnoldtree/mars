@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -20,14 +20,19 @@
 #ifndef MARS_BASELOGIC_H_
 #define MARS_BASELOGIC_H_
 
+#include <stdint.h>
+
 namespace mars{
 namespace baseevent{
     void OnCreate();
+    void OnInitBeforeOnCreate(int _encoder_status);
     void OnDestroy();
     void OnSingalCrash(int _sig);
     void OnExceptionCrash();
     void OnForeground(bool _isforeground);
     void OnNetworkChange();
+    void OnNetworkDataChange(const char* _tag, int32_t _send, int32_t _recv);
+    void OnAlarm(int64_t _id);
 }
 }
 

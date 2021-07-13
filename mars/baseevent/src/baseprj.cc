@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -18,16 +18,24 @@
  */
 
 #include "mars/baseevent/baseprjevent.h"
+#include "mars/baseevent/base_logic.h"
 
-#include "mars/comm/compiler_util.h"
 #include "mars/comm/bootregister.h"
+#include "mars/comm/platform_comm.h"
+#include "mars/comm/thread/lock.h"
+
+using namespace mars::comm;
 
 namespace mars{
     namespace baseevent{
-        
+
         void OnCreate()
         {
             GetSignalOnCreate()();
+        }
+        
+        void OnInitBeforeOnCreate(int _encoder_status) {
+            GetSignalOnInitBeforeOnCreate()(_encoder_status);
         }
         
         void OnDestroy()
@@ -52,8 +60,34 @@ namespace mars{
         
         void OnNetworkChange()
         {
+#ifdef __APPLE__
+            FlushReachability();
+#endif
+#ifdef ANDROID
+            g_NetInfo = 0;
+            
+            ScopedLock lock(g_net_mutex);
+            g_wifi_info.ssid.clear();
+            g_wifi_info.bssid.clear();
+            g_sim_info.isp_code.clear();
+            g_sim_info.isp_name.clear();
+            g_apn_info.nettype = kNoNet -1;
+            g_apn_info.sub_nettype = 0;
+            g_apn_info.extra_info.clear();
+            lock.unlock();
+#endif
             GetSignalOnNetworkChange()();
         }
+        
+        void OnNetworkDataChange(const char* _tag, int32_t _send, int32_t _recv) {
+            GetSignalOnNetworkDataChange()(_tag, _send, _recv);
+        }
+
+#ifdef ANDROID
+        void OnAlarm(int64_t _id) {
+            GetSignalOnAlarm()(_id);
+        }
+#endif
     }
 }
 

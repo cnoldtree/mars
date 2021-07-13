@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -40,7 +40,7 @@
 #define socket_close closesocket
 
 #define socket_errno WSAGetLastError()
-#define socket_strerror gai_strerror
+#define socket_strerror gai_strerrorA//gai_strerror
 
 
 #ifdef __cplusplus
@@ -69,7 +69,9 @@ int          socket_inet_pton(int af, const char* src, void* dst);
 
 
 typedef uint32_t in_addr_t;
+#if !_WIN64
 typedef SSIZE_T ssize_t;
+#endif
 typedef int socklen_t;
 typedef unsigned short in_port_t;
 
@@ -85,8 +87,13 @@ typedef unsigned short in_port_t;
 #define socket_inet_ntop inet_ntop
 #define socket_inet_pton inet_pton
 
+#ifndef SOCKET
 #define SOCKET int
+#endif
+
+#ifndef INVALID_SOCKET
 #define INVALID_SOCKET -1
+#endif
 
 #define IS_NOBLOCK_CONNECT_ERRNO(err) ((err) == SOCKET_ERRNO(EINPROGRESS))
 
@@ -109,6 +116,7 @@ int socket_fix_tcp_mss(SOCKET sockfd);    // make mss=mss-40
 int socket_disable_nagle(SOCKET sock, int nagle);
 int socket_error(SOCKET sock);
 int socket_reuseaddr(SOCKET sock, int optval);
+int socket_reserve_sendbuf(SOCKET sock, uint32_t buflen);
 
 int socket_get_nwrite(SOCKET _sock, int* _nwriteLen);
 int socket_get_nread(SOCKET _sock, int* _nreadLen);

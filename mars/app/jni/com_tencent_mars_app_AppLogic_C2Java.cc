@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -10,7 +10,7 @@
 // either express or implied. See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -37,6 +37,8 @@
 #include "mars/comm/jni/util/var_cache.h"
 #include "mars/comm/jni/util/scope_jenv.h"
 #include "mars/comm/jni/util/comm_function.h"
+#include "mars/comm/thread/mutex.h"
+#include "mars/comm/thread/lock.h"
 
 #include "mars/app/app.h"
 
@@ -85,7 +87,7 @@ AccountInfo GetAccountInfo() {
 
 	info.uin = (long)uin;
 
-	if(username_jstr != NULL) {
+	if (username_jstr != NULL) {
 		info.username = ScopedJstring(env, username_jstr).GetChar();
 		env->DeleteLocalRef(username_jstr);
 	}
@@ -110,7 +112,7 @@ std::string GetUserName() {
 
  	env->DeleteLocalRef(ret_obj);
 
-     if(username_jstr != NULL) {
+     if (username_jstr != NULL) {
          const char* name = env->GetStringUTFChars(username_jstr, NULL);
          std::string user_name(name);
          env->ReleaseStringUTFChars(username_jstr, name);
@@ -121,8 +123,7 @@ std::string GetUserName() {
      }
 }
 
-std::string GetRecentUserName()
-{
+std::string GetRecentUserName() {
 	return GetUserName();
 }
 
@@ -163,18 +164,36 @@ DeviceInfo GetDeviceInfo() {
 
 	jstring devicename_jstr = (jstring)JNU_GetField(env, ret_obj, "devicename", "Ljava/lang/String;").l;
 
+	static comm::Mutex mutex;
+	comm::ScopedLock lock(mutex);
+
 	if (NULL != devicename_jstr) {
-		s_info.devicename = ScopedJstring(env, devicename_jstr).GetChar();
+		ScopedJstring scoped_jstr(env, devicename_jstr);
+		
+		jsize len = env->GetStringUTFLength(devicename_jstr);
+		s_info.devicename = std::string(scoped_jstr.GetChar(), len);
+		
 		env->DeleteLocalRef(devicename_jstr);
 	}
 
 	jstring devicetype_jstr = (jstring)JNU_GetField(env, ret_obj, "devicetype", "Ljava/lang/String;").l;
 	if (NULL != devicetype_jstr) {
-		s_info.devicetype = ScopedJstring(env, devicetype_jstr).GetChar();
+		ScopedJstring scoped_jstr(env, devicetype_jstr);
+
+		jsize len = env->GetStringUTFLength(devicetype_jstr);
+		s_info.devicetype = std::string(scoped_jstr.GetChar(), len);
+		
 		env->DeleteLocalRef(devicetype_jstr);
 	}
 
 	return s_info;
 }
+
+
+mars::comm::ProxyInfo GetProxyInfo(const std::string& _host) {
+    return mars::comm::ProxyInfo();
+}
+
+
 
 }}

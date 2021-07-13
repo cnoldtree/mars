@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in
@@ -24,7 +24,7 @@
 #import <Foundation/Foundation.h>
 #endif
 
-
+// If '_path' is directory, the function has effect on new file but ignores existed file.
 bool setAttrProtectionNone(const char* _path) {
     
 #if !TARGET_OS_IPHONE
@@ -37,11 +37,14 @@ bool setAttrProtectionNone(const char* _path) {
         [path release];
         return false;
     }
-    
-    NSDictionary* attr = [NSDictionary dictionaryWithObject:NSFileProtectionNone forKey:NSFileProtectionKey];
-    
-    BOOL ret = [fileManager setAttributes:attr ofItemAtPath:path error:nil];
-    
+
+    BOOL ret = YES;
+    NSDictionary* old_attr = [[NSFileManager defaultManager] attributesOfItemAtPath:path error:NULL];
+    NSString* protection = [old_attr valueForKey:NSFileProtectionKey];
+    if ([protection isEqualToString:NSFileProtectionNone] == NO) {
+        NSDictionary* attr = [NSDictionary dictionaryWithObject:NSFileProtectionNone forKey:NSFileProtectionKey];
+        ret = [fileManager setAttributes:attr ofItemAtPath:path error:nil];
+    }
     [path release];
     
     return ret;

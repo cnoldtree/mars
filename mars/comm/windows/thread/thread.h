@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -17,7 +17,24 @@
 
 #include <errno.h>
 #include <stdlib.h>
-#include <thr/threads.h>
+
+#include <xthreads.h>
+typedef _Thrd_t thrd_t;
+using _Thrd_start_t = int (*)(void*);
+typedef _Thrd_start_t thrd_start_t;
+
+_CRTIMP2_PURE int __cdecl _Thrd_create(_Thrd_t*, _Thrd_start_t, void*);
+_CRTIMP2_PURE _Thrd_t __cdecl _Thrd_current(void);
+
+#define thrd_create(thr, fun, arg)	_Thrd_create(thr, fun, arg)
+
+#define thrd_detach(thr)		_Thrd_detach(thr)
+
+#define thrd_join(thr, res)		_Thrd_join(thr, res)
+#define thrd_sleep(tm)			_Thrd_sleep(tm)
+#define thrd_yield				_Thrd_yield
+#define thrd_current			_Thrd_current
+
 
 #include "assert/__assert.h"
 #include "condition.h"
@@ -33,11 +50,14 @@
 #include <boost/thread/thread.hpp>
 typedef boost::thread*  thread_handler;
 #else
-#include <thr/threads.h>
+#include <xthreads.h>
 typedef thrd_t*  thread_handler;
 #endif
 
 #define thrd_success 0
+
+namespace mars {
+namespace comm {
 
 typedef unsigned int thread_tid;
 
@@ -113,6 +133,25 @@ class ThreadUtil {
         thrd_join(*pth, 0);
 #endif
     }
+
+	static void join (thread_tid _tid) {
+	
+#ifdef USED_BOOST_THREAD_LIB
+	#error "todo"
+#else
+	HANDLE handler = OpenThread(THREAD_ALL_ACCESS, FALSE, _tid);
+	if (NULL == handler) {
+		ASSERT(false);
+		return;
+	}
+	thrd_t thrd;
+	thrd._Hnd = &handler;
+	thrd._Id = _tid;
+	thread_handler th = &thrd;
+	join(th);
+	CloseHandle(handler);
+#endif
+	}
 
     static void detach(thread_handler& pth) {
         if (pth == NULL)
@@ -199,15 +238,15 @@ class Thread {
 
   public:
     template<class T>
-    explicit Thread(const T& op, size_t _stacksize = 0)
-        : m_runableref(NULL) {
+    explicit Thread(const T& op, const char* _thread_name = NULL, bool _outside_join = false)
+        : m_runableref(NULL), outside_join_(_outside_join) {
         m_runableref = new RunnableReference(detail::transform(op));
         ScopedSpinLock lock(m_runableref->splock);
         m_runableref->AddRef();
     }
 
-    Thread(size_t _stacksize = 0)
-        : m_runableref(NULL) {
+    Thread(const char* _thread_name = NULL, bool _outside_join = false)
+        : m_runableref(NULL), outside_join_(_outside_join) {
         m_runableref = new RunnableReference(NULL);
         ScopedSpinLock lock(m_runableref->splock);
         m_runableref->AddRef();
@@ -226,6 +265,7 @@ class Thread {
         if (isruning())return 0;
 
         m_runableref->isended = false;
+		m_runableref->isjoined = outside_join_;
         m_runableref->AddRef();
 
         // int ret = thrd_create(&m_runableref->tid, (thrd_start_t)&start_routine, (void*)m_runableref);
@@ -254,6 +294,7 @@ class Thread {
         m_runableref->target = detail::transform(op);
 
         m_runableref->isended = false;
+		m_runableref->isjoined = outside_join_;
         m_runableref->AddRef();
 
         // int ret = thrd_create(&m_runableref->tid, (thrd_start_t)&start_routine, (void*)m_runableref);
@@ -278,6 +319,7 @@ class Thread {
         m_runableref->condtime.cancelAnyWayNotify();
         m_runableref->iscanceldelaystart = false;
         m_runableref->isended = false;
+		m_runableref->isjoined = outside_join_;
         m_runableref->aftertime = after;
         m_runableref->AddRef();
 
@@ -311,6 +353,7 @@ class Thread {
         m_runableref->condtime.cancelAnyWayNotify();
         m_runableref->iscanceldelaystart = false;
         m_runableref->isended = false;
+		m_runableref->isjoined = outside_join_;
         m_runableref->aftertime = after;
         m_runableref->periodictime = periodic;
         m_runableref->AddRef();
@@ -447,8 +490,11 @@ class Thread {
     Thread& operator=(const Thread&);
   private:
     RunnableReference*  m_runableref;
+	bool outside_join_;
 };
 
+}
+}
 
 // inline bool operator==(const thread_t& lhs, const thread_t& rhs)
 //{

@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -63,6 +63,7 @@ class tickcount_t {
     bool operator> (const tickcount_t& _tc) const { return tickcount_ >  _tc.tickcount_;}
     bool operator>=(const tickcount_t& _tc) const { return tickcount_ >= _tc.tickcount_;}
 	bool isValid() { return tickcount_!=0; }
+    void setInvalid() { tickcount_ = 0; }
 
   public:
     // tickcount_t(const tickcount_t&);

@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -27,15 +27,18 @@
 #include "thread/thread.h"
 #include "platform_comm.h"
 #include "socket_address.h"
-
+#include "mars/comm/tickcount.h"
 
 #ifdef _WIN32
 #define strdup _strdup
 #endif
 
+namespace mars {
+namespace comm {
+
 TcpClient::TcpClient(const char* _ip, uint16_t _port, MTcpEvent& _event, int _timeout)
     : ip_(strdup(_ip)) , port_(_port) , event_(_event)
-    , socket_(INVALID_SOCKET) , have_read_date_(false) , will_disconnect_(false) , writedbufid_(0)
+    , socket_(INVALID_SOCKET) , have_read_data_(false) , will_disconnect_(false) , writedbufid_(0)
     , thread_(boost::bind(&TcpClient::__RunThread, this))
     , timeout_(_timeout), status_(kTcpInit) {
     if (!pipe_.IsCreateSuc()) status_ = kTcpInitErr;
@@ -92,7 +95,7 @@ void TcpClient::DisconnectAndWait() {
 bool TcpClient::HaveDataRead() const {
     if (kTcpConnected != status_) return false;
 
-    return have_read_date_;
+    return have_read_data_;
 }
 
 ssize_t TcpClient::Read(void* _buf, unsigned int _len) {
@@ -102,7 +105,7 @@ ssize_t TcpClient::Read(void* _buf, unsigned int _len) {
     ScopedLock lock(read_disconnect_mutex_);
     ssize_t ret = recv(socket_, (char*)_buf, _len, 0);
 
-    have_read_date_ = false;
+    have_read_data_ = false;
     __SendBreak();
 
     return ret;
@@ -166,19 +169,24 @@ void TcpClient::__Run() {
         return;
     }
 
-    if (::getNetInfo() == kWifi && socket_fix_tcp_mss(socket_) < 0) {
+    if (getNetInfo() == kWifi && socket_fix_tcp_mss(socket_) < 0) {
 #ifdef ANDROID
         xinfo2(TSF"wifi set tcp mss error:%0", strerror(socket_errno));
 #endif
     }
 
-    if (0 != socket_ipv6only(socket_, 0)){
-        xwarn2(TSF"set ipv6only failed. error %_",strerror(socket_errno));
-    }
+#ifdef _WIN32
+    if (0 != socket_ipv6only(socket_, 0)){ xwarn2(TSF"set ipv6only failed. error %_",strerror(socket_errno)); }
+#endif
     
     xerror2_if(0 != socket_set_nobio(socket_), TSF"socket_set_nobio:%_, %_", socket_errno, socket_strerror(socket_errno));
 
     int ret = ::connect(socket_, (sockaddr*)&_addr, sizeof(_addr));
+
+    std::string local_ip = socket_address::getsockname(socket_).ip();
+    unsigned int local_port = socket_address::getsockname(socket_).port();
+
+    xinfo2(TSF"sock:%_, local_ip:%_, local_port:%_, svr_ip:%_, svr_port:%_", socket_, local_ip, local_port, ip_, port_);
 
     if (0 > ret && !IS_NOBLOCK_CONNECT_ERRNO(socket_errno)) {
         xerror2("connect errno=%d", socket_errno);
@@ -234,8 +242,10 @@ void TcpClient::__Run() {
         SocketSelect select_readwrite(pipe_, true);
         select_readwrite.PreSelect();
         select_readwrite.Exception_FD_SET(socket_);
-
-        if (!have_read_date_) select_readwrite.Read_FD_SET(socket_);
+        
+        tickcount_t round_tick(true);
+        
+        if (!have_read_data_) select_readwrite.Read_FD_SET(socket_);
 
         {
             ScopedLock lock(write_mutex_);
@@ -281,12 +291,12 @@ void TcpClient::__Run() {
             ret = (int)recv(socket_, &buf_test, 1, MSG_PEEK);
 
             if (0 < ret) {
-                have_read_date_ = true;
+                have_read_data_ = true;
 
                 lock.unlock();
                 event_.OnRead();
             } else if (0 == ret) {
-                have_read_date_ = false;
+                have_read_data_ = false;
                 status_ = kTcpDisConnected;
                 lock.unlock();
                 event_.OnDisConnect(true);
@@ -316,7 +326,15 @@ void TcpClient::__Run() {
                     return;
                 }
 
-                if (0 < send_len) buf.Seek(send_len, AutoBuffer::ESeekCur);
+                if (0 < send_len){
+                    buf.Seek(send_len, AutoBuffer::ESeekCur);
+                    double send_len_bytes = (double)send_len;
+                    double cost_sec = ((double)round_tick.gettickspan())/1000;
+                    xverbose2(TSF"debug:send_len:%_ bytes, cost_sec:%_ seconds", send_len_bytes, cost_sec);
+                    if (cost_sec > 0.0 &&send_len_bytes/cost_sec < 20*1024) {
+                        xwarn2(TSF"send speed slow:%_ bytes/sec, send_len:%_ bytes, send buf len:%_, cost_sec:%_ seconds", send_len_bytes/cost_sec, send_len_bytes, len-buf.Pos(), cost_sec);
+                    }
+                }
             } else {
                 delete lst_buffer_.front();
                 lst_buffer_.pop_front();
@@ -346,4 +364,7 @@ void TcpClient::__RunThread() {
 
 void TcpClient::__SendBreak() {
     pipe_.Break();
+}
+
+}
 }

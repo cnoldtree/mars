@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -24,6 +24,7 @@
 #include <string>
 #include <map>
 #include <vector>
+#include <memory>
 
 #include "boost/signals2.hpp"
 #include "boost/function.hpp"
@@ -33,54 +34,62 @@
 #include "mars/comm/http.h"
 #include "mars/comm/socket/socketselect.h"
 #include "mars/comm/messagequeue/message_queue.h"
-#include "mars/comm/messagequeue/message_queue_utils.h"
 #include "mars/stn/stn.h"
 #include "mars/stn/task_profile.h"
+#include "mars/comm/socket/socket_address.h"
 
 #include "net_source.h"
 #include "shortlink_interface.h"
+#include "socket_operator.h"
 
 namespace mars {
 namespace stn {
-
+    
+class shortlink_tracker;
+    
 class ShortLink : public ShortLinkInterface {
   public:
-    ShortLink(MessageQueue::MessageQueue_t _messagequeueid, NetSource& _netsource, const std::vector<std::string>& _host_list, const std::string& _url, const int _taskid, bool _use_proxy);
+    ShortLink(comm::MessageQueue::MessageQueue_t _messagequeueid, NetSource& _netsource, const Task& _task, bool _use_proxy, std::unique_ptr<SocketOperator> _operator = nullptr);
     virtual ~ShortLink();
 
     ConnectProfile   Profile() const { return conn_profile_;}
+    
+    void              FillOutterIPAddr(const std::vector<IPPortItem>& _out_addr);
 
   protected:
-    virtual void 	 SendRequest(AutoBuffer& _buf_req);
+    virtual void 	 SendRequest(AutoBuffer& _buffer_req, AutoBuffer& _task_extend);
+    virtual bool IsKeepAlive() const { return is_keep_alive_; }
 
     virtual void     __Run();
     virtual SOCKET   __RunConnect(ConnectProfile& _conn_profile);
     virtual void     __RunReadWrite(SOCKET _sock, int& _errtype, int& _errcode, ConnectProfile& _conn_profile);
     void             __CancelAndWaitWorkerThread();
 
-    void			 __UpdateProfile(const ConnectProfile& _conn_profile);
+    void			 __UpdateProfile(const ConnectProfile _conn_profile);
 
     void 			 __RunResponseError(ErrCmdType _type, int _errcode, ConnectProfile& _conn_profile, bool _report = true);
-    void 			 __OnResponse(ErrCmdType _err_type, int _status, AutoBuffer& _body, ConnectProfile& _conn_profile, bool _cancel_retry = true, bool _report = true);
+    void 			 __OnResponse(ErrCmdType _err_type, int _status, AutoBuffer& _body, AutoBuffer& _extension, ConnectProfile& _conn_profile, bool _report = true);
+
+  private:
+    bool       __ContainIPv6(const std::vector<socket_address>& _vecaddr);
     
   protected:
-    MessageQueue::ScopeRegister     asyncreg_;
+    comm::MessageQueue::ScopeRegister     asyncreg_;
     NetSource&                      net_source_;
-    Thread                          thread_;
+    std::unique_ptr<SocketOperator> socketOperator_;
+    Task                            task_;
+    comm::Thread                          thread_;
 
-    const uint32_t                  taskid_;
-    SocketSelectBreaker             breaker_;
     ConnectProfile                  conn_profile_;
     NetSource::DnsUtil              dns_util_;
-    
-    std::vector<std::string>        shortlink_hosts_;
-    const std::string               url_;
     const bool                      use_proxy_;
     AutoBuffer                      send_body_;
-
-    AutoBuffer                      buf_body_;
-    int                             status_code_;
-
+    AutoBuffer                      send_extend_;
+    
+    std::vector<IPPortItem>        outter_vec_addr_;
+    
+    boost::scoped_ptr<shortlink_tracker> tracker_;
+    bool                            is_keep_alive_;
 };
         
 }}

@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -49,8 +49,8 @@ class LongLinkSpeedTestItem {
     LongLinkSpeedTestItem(const std::string& _ip, uint16_t _port);
     ~LongLinkSpeedTestItem();
 
-    void HandleFDISSet(SocketSelect& _sel);
-    void HandleSetFD(SocketSelect& _sel);
+    void HandleFDISSet(comm::SocketSelect& _sel);
+    void HandleSetFD(comm::SocketSelect& _sel);
 
     int GetSocket();
     std::string GetIP();
@@ -87,8 +87,8 @@ class LongLinkSpeedTest {
     boost::shared_ptr<NetSource> GetNetSource();
   private:
     boost::shared_ptr<NetSource> netsource_;
-    SocketSelectBreaker breaker_;
-    SocketSelect selector_;
+    comm::SocketBreaker breaker_;
+    comm::SocketSelect selector_;
 };
         
     }

@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -23,6 +23,13 @@ boost::signals2::signal<void ()>& GetSignalOnCreate()
 {
 	static boost::signals2::signal<void ()> SignalOnCreate;
 	return SignalOnCreate;
+}
+
+
+boost::signals2::signal<void (int _encoder_version)>& GetSignalOnInitBeforeOnCreate() {
+	
+	static boost::signals2::signal<void (int _encoder_version)> SignalOnInitBeforeOnCreate;
+	return SignalOnInitBeforeOnCreate;
 }
 
 boost::signals2::signal<void ()>& GetSignalOnDestroy()
@@ -59,4 +66,9 @@ boost::signals2::signal<void ()>& GetSignalOnNetworkChange()
 boost::signals2::signal<void (const char* _tag, ssize_t _send, ssize_t _recv)>& GetSignalOnNetworkDataChange() {
     static boost::signals2::signal<void (const char* _tag, ssize_t _send, ssize_t _recv)> SignalOnNetworkDataChange;
     return SignalOnNetworkDataChange;
+}
+
+boost::signals2::signal<void (int64_t _id)>& GetSignalOnAlarm() {
+    static boost::signals2::signal<void (int64_t _id)> SignalOnAlarm;
+    return SignalOnAlarm;
 }

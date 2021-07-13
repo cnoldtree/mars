@@ -1,5 +1,5 @@
 /*
-* Tencent is pleased to support the open source community by making GAutomator available.
+* Tencent is pleased to support the open source community by making Mars available.
 * Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 *
 * Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -15,9 +15,8 @@
 package com.tencent.mars.sample.wrapper.remote;
 
 /**
- *
  * Constants for Mars Task properties
- *
+ * <p></p>
  * Created by zhaoyuan on 16/2/29.
  */
 public final class MarsTaskProperty {
@@ -31,4 +30,5 @@ public final class MarsTaskProperty {
     public static final String OPTIONS_CMD_ID = "cmd_id";
     public static final String OPTIONS_CHANNEL_SHORT_SUPPORT = "short_support";
     public static final String OPTIONS_CHANNEL_LONG_SUPPORT = "long_support";
+    public static final String OPTIONS_TASK_ID = "task_id";
 }

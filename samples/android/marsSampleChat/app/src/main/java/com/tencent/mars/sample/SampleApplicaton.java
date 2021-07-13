@@ -1,5 +1,5 @@
 /*
-* Tencent is pleased to support the open source community by making GAutomator available.
+* Tencent is pleased to support the open source community by making Mars available.
 * Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 *
 * Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -14,13 +14,10 @@
 
 package com.tencent.mars.sample;
 
-import android.Manifest;
 import android.app.ActivityManager;
 import android.app.Application;
 import android.content.Context;
-import android.content.pm.PackageManager;
 import android.os.Environment;
-import android.support.v4.content.ContextCompat;
 
 import com.tencent.mars.app.AppLogic;
 import com.tencent.mars.sample.core.ActivityEvent;
@@ -29,14 +26,13 @@ import com.tencent.mars.sample.wrapper.service.DebugMarsServiceProfile;
 import com.tencent.mars.sample.wrapper.service.MarsServiceNative;
 import com.tencent.mars.sample.wrapper.service.MarsServiceProfile;
 import com.tencent.mars.sample.wrapper.service.MarsServiceProfileFactory;
+import com.tencent.mars.stn.StnLogic;
 import com.tencent.mars.xlog.Log;
 import com.tencent.mars.xlog.Xlog;
 
-import java.io.File;
 import java.util.Random;
 
 /**
- *
  * Created by zhaoyuan on 16/1/18.
  */
 public class SampleApplicaton extends Application {
@@ -46,7 +42,7 @@ public class SampleApplicaton extends Application {
     private static Context context;
 
     public static AppLogic.AccountInfo accountInfo = new AppLogic.AccountInfo(
-            new Random(System.currentTimeMillis()/1000).nextInt(), "anonymous");
+            new Random(System.currentTimeMillis() / 1000).nextInt(), "anonymous");
 
     public static volatile boolean hasSetUserName = false;
 
@@ -63,7 +59,7 @@ public class SampleApplicaton extends Application {
         super.onCreate();
         context = this;
 
-        System.loadLibrary("stlport_shared");
+        System.loadLibrary("c++_shared");
         System.loadLibrary("marsxlog");
         openXlog();
 
@@ -74,6 +70,8 @@ public class SampleApplicaton extends Application {
             }
         });
 
+        // temporary fix: ip is invalid, ip:127.0.0.1. it will be remove in future.
+//        StnLogic.setDebugIP("localhost", "127.0.0.1");
         // NOTE: MarsServiceProxy is for client/caller
         // Initialize MarsServiceProxy for local client, can be moved to other place
         MarsServiceProxy.init(this, getMainLooper(), null);
@@ -95,43 +93,38 @@ public class SampleApplicaton extends Application {
 
     }
 
-    public static void openXlog() {
+    public static  void openXlog() {
 
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-            if (BuildConfig.DEBUG) {
-                Xlog.setConsoleLogOpen(true);
+        int pid = android.os.Process.myPid();
+        String processName = null;
+        ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+        for (ActivityManager.RunningAppProcessInfo appProcess : am.getRunningAppProcesses()) {
+            if (appProcess.pid == pid) {
+                processName = appProcess.processName;
+                break;
             }
-            else {
-                Xlog.setConsoleLogOpen(false);
-            }
-            Log.setLogImp(new Xlog());
-        }
-        else {
-            int pid = android.os.Process.myPid();
-            String processName = null;
-            ActivityManager am = (ActivityManager)context.getSystemService(Context.ACTIVITY_SERVICE);
-            for (ActivityManager.RunningAppProcessInfo appProcess : am.getRunningAppProcesses()){
-                if(appProcess.pid == pid){
-                    processName = appProcess.processName;
-                    break;
-                }
-            }
-
-            final String SDCARD = Environment.getExternalStorageDirectory().getAbsolutePath();
-            final String logPath = SDCARD + "/marssample/log";
-
-            String logFileName = processName.indexOf(":") == -1 ? "MarsSample" : ("MarsSample_" + processName.substring(processName.indexOf(":")+1));
-
-            if (BuildConfig.DEBUG) {
-                Xlog.appenderOpen(Xlog.LEVEL_VERBOSE, Xlog.AppednerModeAsync, "", logPath, logFileName);
-                Xlog.setConsoleLogOpen(true);
-            } else {
-                Xlog.appenderOpen(Xlog.LEVEL_INFO, Xlog.AppednerModeAsync, "", logPath, logFileName);
-                Xlog.setConsoleLogOpen(false);
-            }
-            Log.setLogImp(new Xlog());
         }
 
+        if (processName == null) {
+            return;
+        }
+
+        final String SDCARD = Environment.getExternalStorageDirectory().getAbsolutePath();
+        final String logPath = SDCARD + "/marssample/log";
+
+        String logFileName = processName.indexOf(":") == -1 ? "MarsSample" : ("MarsSample_" + processName.substring(processName.indexOf(":") + 1));
+
+        int level;
+        Xlog xlog = new Xlog();
+        if (BuildConfig.DEBUG) {
+            level = Xlog.LEVEL_VERBOSE;
+            xlog.setConsoleLogOpen(0, true);
+        } else {
+            level = Xlog.LEVEL_INFO;
+            xlog.setConsoleLogOpen(0, false);
+        }
+        xlog.appenderOpen(level, Xlog.AppednerModeAsync, "", logPath, logFileName, 0);
+        Log.setLogImp(xlog);
     }
 
     public static Context getContext() {

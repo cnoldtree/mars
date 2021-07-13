@@ -1,5 +1,5 @@
 /*
-* Tencent is pleased to support the open source community by making GAutomator available.
+* Tencent is pleased to support the open source community by making Mars available.
 * Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 *
 * Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -55,6 +55,7 @@ public class NetMsgHeaderHandler extends ChannelInboundHandlerAdapter {
     static {
         CMD_PATH_MAP.put(Main.CmdID.CMD_ID_HELLO_VALUE, "mars/hello");
         CMD_PATH_MAP.put(Main.CmdID.CMD_ID_SEND_MESSAGE_VALUE, "/mars/sendmessage");
+        CMD_PATH_MAP.put(Main.CmdID.CMD_ID_HELLO2_VALUE, "/mars/hello2");
     }
 
     private ConcurrentHashMap<ChannelHandlerContext, Long> linkTimeout = new ConcurrentHashMap<>();
@@ -106,6 +107,21 @@ public class NetMsgHeaderHandler extends ChannelInboundHandlerAdapter {
                         IOUtils.closeQuietly(requestDataStream);
                         byte[] respBuf = msgXp.encode();
                         logger.info(LogUtils.format( "client resp, cmdId=%d, seq=%d, resp.len=%d", msgXp.cmdId, msgXp.seq, msgXp.body == null ? 0 : msgXp.body.length));
+                        ctx.writeAndFlush(ctx.alloc().buffer().writeBytes(respBuf));
+                    }
+                    else {
+
+                    }
+                    break;
+                case Main.CmdID.CMD_ID_HELLO2_VALUE:
+                    requestDataStream = new ByteArrayInputStream(msgXp.body);
+
+                    inputStream = doHttpRequest(webCgi, requestDataStream);
+                    if (inputStream != null) {
+                        msgXp.body = IOUtils.toByteArray(inputStream);
+                        IOUtils.closeQuietly(requestDataStream);
+                        byte[] respBuf = msgXp.encode();
+                        logger.info(LogUtils.format("client resp, cmdId=%d, seq=%d, resp.len=%d", msgXp.cmdId, msgXp.seq, msgXp.body == null ? 0 : msgXp.body.length));
                         ctx.writeAndFlush(ctx.alloc().buffer().writeBytes(respBuf));
                     }
                     else {

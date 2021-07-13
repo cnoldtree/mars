@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -88,6 +88,9 @@ class PingQuery {
     int RunPingQuery(int queryCount, int interval/*S*/, int timeout/*S*/,
                        const char* dest, unsigned int packetSize = 0);
 
+    int RunPingQuery(int _querycount, int interval/*S*/, int timeout/*S*/, 
+                       const char* dest, unsigned int packetSize, int* rtt);
+
 #ifdef __APPLE__
   private:
     void proc_v4(char* ptr, ssize_t len, struct msghdr* msg, struct timeval* tvrecv);
@@ -117,8 +120,8 @@ class PingQuery {
     int                     timeout_;
     struct sockaddr          sendaddr_;
     struct sockaddr            recvaddr_;
-    Alarm                   alarm_;
-    SocketSelectBreaker     readwrite_breaker_;
+    mars::comm::Alarm                   alarm_;
+    mars::comm::SocketBreaker     readwrite_breaker_;
 #endif
     NetCheckTrafficMonitor* traffic_monitor_;
 };

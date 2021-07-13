@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -30,6 +30,20 @@
 
 @implementation AppDelegate
 
+std::string RandStr(const int len) {
+    std::string str;
+    str.resize(len);
+    for (int i = 0; i < len; ++i) {
+        str[i] = 'A' + rand() % 26;
+    }
+    return str;
+}
+
+long GetCurrentTime() {
+    struct timeval tv;
+    gettimeofday(&tv,NULL);
+    return tv.tv_sec * 1000 + tv.tv_usec / 1000;
+}
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     // Override point for customization after application launch.
@@ -40,7 +54,14 @@
     
     xinfo2(TSF"%0 %1 %0", "123", 345);
     xinfo2("%s %d", "232", 123);
-
+    
+    long before = GetCurrentTime();
+    int CNT = 3000;
+    for (int i = 0; i < CNT; ++i) {
+        xinfo2(TSF"%_", RandStr(100));
+    }
+    long after = GetCurrentTime();
+    NSLog(@"use time:%ld", (after - before));
     return YES;
 }
 

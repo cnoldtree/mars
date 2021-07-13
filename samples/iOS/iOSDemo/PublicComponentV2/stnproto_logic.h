@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -13,7 +13,7 @@
 /*
  * stnproto_logic.h
  *
- *  Created on: 2016年3月16日
+ *  Created on: 2016-03-15
  *      Author: caoshaokun
  */
 
@@ -25,7 +25,7 @@
 namespace mars {
 namespace stn {
 
-void SetClientVersion(uint32_t _productID);
+void SetClientVersion(uint32_t _client_version);
 
 }}
 

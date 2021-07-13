@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -26,6 +26,9 @@
 
 #define DELETE_AND_NULL(a) {if (a) delete a; a = NULL;}
 #define MAX_DATAGRAM 65536
+
+namespace mars {
+namespace comm {
 
 struct UdpSendData
 {
@@ -280,3 +283,5 @@ int UdpClient::__DoSelect(bool _bReadSet, bool _bWriteSet, void* _buf, size_t _l
     return -1;
 }
 
+}
+}

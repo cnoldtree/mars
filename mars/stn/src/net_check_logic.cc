@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -250,16 +250,12 @@ void NetCheckLogic::__StartNetCheck() {
 
 
 	for (std::vector<std::string>::iterator iter = shortlink_hostlist.begin(); iter != shortlink_hostlist.end(); ++iter) {
-		if (longlink_portlist.empty()) {
-			xerror2(TSF"longlink no port");
-			break;
-		}
 
 		std::vector<std::string> shortlink_iplist;
 		dns_util_.GetNewDNS().GetHostByName(*iter, shortlink_iplist);
 		if (shortlink_iplist.empty()) dns_util_.GetDNS().GetHostByName(*iter, shortlink_iplist);
 		if (shortlink_iplist.empty()) {
-			xerror2(TSF"no dns ip for longlink host: %_", *iter);
+			xerror2(TSF"no dns ip for shortlink host: %_", *iter);
 			continue;
 		}
 

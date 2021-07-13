@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -46,7 +46,7 @@
 - (void)makesureLongLinkConnect;
 - (void)destoryMars;
 
-
+- (void)addPushObserver:(id<PushNotifyDelegate>)observer withCmdId:(int)cmdId;
 - (int)startTask:(CGITask *)task ForUI:(id<UINotifyDelegate>)delegateUI;
 - (void)stopTask:(NSInteger)taskID;
 

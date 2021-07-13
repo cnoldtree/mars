@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -21,13 +21,16 @@
 #import <Cocoa/Cocoa.h>
 
 #import "UINotifyDelegate.h"
+#import "Main.pb.h"
+#import "../Bussiness/PushNotifyDelegate.h"
 
-@interface TopicViewController : NSViewController<UINotifyDelegate> {
+@interface TopicViewController : NSViewController<UINotifyDelegate, PushNotifyDelegate> {
     NSString* text;
 }
 
 @property (weak) IBOutlet NSTextField *textField;
-@property (weak) IBOutlet NSTextField *sendTextField;
-@property (weak) IBOutlet NSTextField *recvTextField;
+@property NSTextView *recvTextView;
 
+-(void)setHostController:(NSViewController*)controller;
+-(void)setConversation:(Conversation*)conversation;
 @end

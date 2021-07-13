@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -37,7 +37,7 @@
     [[NetworkService sharedInstance] setCallBack];
     [[NetworkService sharedInstance] setClientVersion:200];
     [[NetworkService sharedInstance] createMars];
-    [[NetworkService sharedInstance] setLongLinkAddress:@"localhost" port:8081];
+    [[NetworkService sharedInstance] setLongLinkAddress:@"www.marsopen.cn" port:8081];
     [[NetworkService sharedInstance] setShortLinkPort:8080];
 
     [[NetworkService sharedInstance] reportEvent_OnForground:YES];

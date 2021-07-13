@@ -1,5 +1,5 @@
 /*
-* Tencent is pleased to support the open source community by making GAutomator available.
+* Tencent is pleased to support the open source community by making Mars available.
 * Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 *
 * Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -30,9 +30,9 @@ public class MainService implements PushMessageHandler {
 
     private LinkedBlockingQueue<PushMessage> pushMessages = new LinkedBlockingQueue<>();
 
-    private BusinessHandler[] handlers = new BusinessHandler[]{
-            new MessageHandler(),
-            new StatisticHandler()
+    private BusinessHandler[] handlers = new BusinessHandler[] {
+        new MessageHandler(),
+        new StatisticHandler()
     };
 
     public MainService() {

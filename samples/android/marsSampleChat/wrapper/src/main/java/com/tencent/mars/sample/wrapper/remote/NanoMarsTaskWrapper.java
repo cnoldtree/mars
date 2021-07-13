@@ -1,5 +1,5 @@
 /*
-* Tencent is pleased to support the open source community by making GAutomator available.
+* Tencent is pleased to support the open source community by making Mars available.
 * Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 *
 * Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -14,9 +14,7 @@
 
 package com.tencent.mars.sample.wrapper.remote;
 
-import com.google.protobuf.nano.CodedOutputByteBufferNano;
-import com.google.protobuf.nano.MessageNano;
-
+import com.google.protobuf.GeneratedMessageLite;
 import com.tencent.mars.sample.utils.print.MemoryDump;
 import com.tencent.mars.stn.StnLogic;
 import com.tencent.mars.xlog.Log;
@@ -26,7 +24,7 @@ import com.tencent.mars.xlog.Log;
  * <p></p>
  * Created by zhaoyuan on 16/2/29.
  */
-public abstract class NanoMarsTaskWrapper<T extends MessageNano, R extends MessageNano> extends AbstractTaskWrapper {
+public abstract class NanoMarsTaskWrapper<T extends GeneratedMessageLite.Builder, R extends GeneratedMessageLite.Builder> extends AbstractTaskWrapper {
 
     private static final String TAG = "Mars.Sample.NanoMarsTaskWrapper";
 
@@ -45,9 +43,8 @@ public abstract class NanoMarsTaskWrapper<T extends MessageNano, R extends Messa
         try {
             onPreEncode(request);
 
-            final byte[] flatArray = new byte[request.getSerializedSize()];
-            final CodedOutputByteBufferNano output = CodedOutputByteBufferNano.newInstance(flatArray);
-            request.writeTo(output);
+
+            final byte[] flatArray = request.build().toByteArray();
 
             Log.d(TAG, "encoded request to buffer, [%s]", MemoryDump.dumpHex(flatArray));
 
@@ -64,8 +61,8 @@ public abstract class NanoMarsTaskWrapper<T extends MessageNano, R extends Messa
     public int buf2resp(byte[] buf) {
         try {
             Log.d(TAG, "decode response buffer, [%s]", MemoryDump.dumpHex(buf));
+            response.mergeFrom(buf);
 
-            response = MessageNano.mergeFrom(response, buf);
             onPostDecode(response);
             return StnLogic.RESP_FAIL_HANDLE_NORMAL;
 

@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -22,6 +22,8 @@
 
 #include "assert/__assert.h"
 
+namespace mars {
+namespace comm {
 class Mutex {
   public:
     typedef  boost::mutex handle_type;
@@ -102,5 +104,7 @@ class RecursiveMutex {
     boost::recursive_mutex m_mutex;
 };
 
+}
+}
 
 #endif /* MUTEX_H_ */

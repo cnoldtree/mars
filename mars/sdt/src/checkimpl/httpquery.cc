@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -106,7 +106,7 @@ int SendHttpQuery(const std::string& _url, int& _status_code, std::string& _errm
     bool domain_is_ipaddr = socket_address(host.c_str(), 0).valid();  // 判断strHost是否是一个点分十进制IP
 
     header.HeaderFiled("Host", host.c_str());
-    str_req.append(header.ToStrig());
+    str_req.append(header.ToString());
     str_req.append("\r\n\r\n");  // important
 
     xdebug2(TSF"str_req=%_", str_req);
@@ -180,6 +180,13 @@ int SendHttpQuery(const std::string& _url, int& _status_code, std::string& _errm
         if ((ret = tcpquery.tcp_receive(recv_autobuf, 1024/*HTTP_DUMMY_RECV_DATA_SIZE*/, (int)(_timeout - timeSpan4))) < 0) {
             xerror2(TSF"tcp receive data error, ret: %0", ret);
             _errmsg.append("receive http data error.");
+            break;
+        }
+
+        // fix SplitHttpHeadAndBody crash
+        if (0 == recv_autobuf.Length()) {
+            xwarn2(TSF"recv buff len is 0");
+            ret = kSelectErr;
             break;
         }
 

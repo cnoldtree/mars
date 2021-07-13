@@ -1,5 +1,5 @@
 /*
-* Tencent is pleased to support the open source community by making GAutomator available.
+* Tencent is pleased to support the open source community by making Mars available.
 * Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 *
 * Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -48,10 +48,7 @@ public abstract class AbstractTaskWrapper extends MarsTaskWrapper.Stub {
     }
 
     @Override
-    public void onTaskEnd() {
-        // TODO: Running in client, need to complete onTaskEnd if service connection break
-        // Nothing to do by defaults
-    }
+    public abstract void onTaskEnd(int errType, int errCode);
 
     public AbstractTaskWrapper setHttpRequest(String host, String path) {
         properties.putString(MarsTaskProperty.OPTIONS_HOST, ("".equals(host) ? null : host));

@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -21,6 +21,7 @@
 #import <Foundation/Foundation.h>
 
 #import "NetworkDelegate.h"
+#import "../Bussiness/PushNotifyDelegate.h"
 
 static const int SAYHELLO = 1;
 static const int CONVERSATION_LIST = 2;
@@ -29,6 +30,8 @@ static const int SENDMSG = 3;
 @interface NetworkEvent : NSObject<NetworkDelegate> {
     NSMutableDictionary   *tasks;
     NSMutableDictionary* controllers;
+    NSMutableDictionary* pushrecvers;
 }
 
+- (void)addPushObserver:(id<PushNotifyDelegate>)observer withCmdId:(int)cmdId;
 @end

@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -60,7 +60,7 @@ SdtCore::~SdtCore() {
 
 void SdtCore::StartCheck(CheckIPPorts& _longlink_items, CheckIPPorts& _shortlink_items, int _mode, int _timeout) {
     xinfo_function();
-    ScopedLock lock(checking_mutex_);
+    comm::ScopedLock lock(checking_mutex_);
 
     if (checking_) return;
 
@@ -159,9 +159,13 @@ void SdtCore::__DumpCheckResult() {
 void SdtCore::CancelCheck() {
     xinfo_function();
     cancel_ = true;
+    for (std::list<BaseChecker*>::iterator iter = check_list_.begin(); iter != check_list_.end(); ++iter) {
+        (*iter)->CancelDoCheck();
+    }
 }
 
 void SdtCore::CancelAndWait() {
     xinfo_function();
+    CancelCheck();
     thread_.join();
 }

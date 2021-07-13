@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -25,14 +25,15 @@
 #include <vector>
 
 #include "unix_socket.h"
+#include "comm_data.h"
 
-class SocketSelectBreaker;
 class socket_address;
 class AutoBuffer;
 
-#ifdef COMPLEX_CONNECT_NAMESPACE
-namespace COMPLEX_CONNECT_NAMESPACE {
-#endif
+namespace mars {
+namespace comm {
+
+class SocketBreaker;
 
 class MComplexConnect {
   public:
@@ -45,19 +46,29 @@ class MComplexConnect {
     virtual bool OnShouldVerify(unsigned int _index, const socket_address& _addr) { return false;}
     virtual bool OnVerifySend(unsigned int _index, const socket_address& _addr, SOCKET _socket, AutoBuffer& _buffer_send) { return false;}
     virtual bool OnVerifyRecv(unsigned int _index, const socket_address& _addr, SOCKET _socket, const AutoBuffer& _buffer_recv) { return false;}
-    virtual void OnVerifyTimeout(int _usedtime) {}
+    virtual void OnVerifyTimeout(unsigned int _index, const socket_address& _addr, SOCKET _socket, int _timeout) {}
 
     virtual void OnFinished(unsigned int _index, const socket_address& _addr, SOCKET _socket,
                             int _error, int _conn_rtt, int _conn_totalcost, int _complex_totalcost) {}
 };
 
 class ComplexConnect {
+
+  public:
+    enum EachIPConnectTimoutMode {
+      MODE_FIXED = 1,
+      MODE_INCREASE = 2,
+    };
+
   public:
     ComplexConnect(unsigned int _timeout /*ms*/, unsigned int _interval /*ms*/);
     ComplexConnect(unsigned int _timeout /*ms*/, unsigned int _interval /*ms*/, unsigned int _error_interval /*ms*/, unsigned int _max_connect);
+    ComplexConnect(unsigned int _timeout /*ms*/, unsigned int _interval /*ms*/, EachIPConnectTimoutMode _mode);
     ~ComplexConnect();
 
-    SOCKET ConnectImpatient(const std::vector<socket_address>& _vecaddr, SocketSelectBreaker& _breaker, MComplexConnect* _observer = NULL);
+    SOCKET ConnectImpatient(const std::vector<socket_address>& _vecaddr, SocketBreaker& _breaker, MComplexConnect* _observer = NULL,
+                            mars::comm::ProxyType _proxy_type = mars::comm::kProxyNone, const socket_address* _proxy_addr = NULL,
+                            const std::string& _proxy_username = "", const std::string& _proxy_pwd = "");
 
     unsigned int TryCount() const { return trycount_;}
     int Index() const { return index_;}
@@ -66,6 +77,9 @@ class ComplexConnect {
     unsigned int IndexRtt() const { return index_conn_rtt_;}
     unsigned int IndexTotalCost() const { return index_conn_totalcost_;}
     unsigned int TotalCost() const { return totalcost_;}
+    bool IsInterrupted() const{ return is_interrupted_;}
+    bool IsConnectiveCheckFailed() const{   return is_connective_check_failed_; }
+    void SetNeedDetailLog(bool _need) {need_detail_log_ = _need;}
 
   private:
     int __ConnectTime(unsigned int _index) const;
@@ -88,10 +102,13 @@ class ComplexConnect {
     int index_conn_rtt_;
     int index_conn_totalcost_;
     int totalcost_;
+    bool is_interrupted_;
+    bool is_connective_check_failed_;
+    EachIPConnectTimoutMode each_IP_timeout_mode_;
+    bool need_detail_log_;
 };
 
-#ifdef COMPLEX_CONNECT_NAMESPACE
 }
-#endif
+}
 
 #endif

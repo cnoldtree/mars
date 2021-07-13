@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -21,45 +21,35 @@
 #ifndef stn_config_h
 #define stn_config_h
 
-/**
- * nooping param
- */
-//#define NOOP_CMDID_REQ 6
-//#define NOOP_DUMMY_SEQ 1
-//#define NOOP_CHECK_SEQ (0xFFFFFFFF)
-//#define NOOP_CMDID_RESP 6
-
-//
-#define DNS_TIMEOUT  (1)// s
 
 //if do not use newdns IP, comment the macro
 #define USE_LONG_LINK
 //task attribute max value
-#define DEF_TASK_TIME_OUT (60*1000)
+#define DEF_TASK_TIME_OUT (40*1000)
 #define DEF_TASK_RETRY_COUNT (1)
 #define DEF_TASK_RETRY_INTERNAL (1 * 1000)
 
 // Heartbeart Range
-#define MinHeartInterval (4  * 60 * 1000 + 30 * 1000)   // 4.5 minute
-#define MaxHeartInterval (14 * 60 * 1000 + 50 * 1000)   // 14 minute 50 seconds
+#define MinHeartInterval (3  * 60 * 1000 + 30 * 1000)   // 3.5 minute
+#define MaxHeartInterval (10 * 60 * 1000)   // 10 minute
 
 // Heartbeat Step
 #define HeartStep (60 * 1000)      // try to increse current heartbeat by HeartStep
 #define SuccessStep  (20 * 1000)   // when finish compute choose successHeart-=SuccessStep as the stable heartbeat
 
-#define MaxHeartFailCount (3)
-#define BaseSuccCount (3)
+#define MaxHeartFailCount (2)
+#define BaseSuccCount (5)
 #define NetStableTestCount (3)     //We think it's time to test after NetStableCount times heartbeat using MinHeartInterval
 
 //signalling transmits timeout related constants
 const static unsigned int kBaseFirstPackageWifiTimeout = 12*1000;
 const static unsigned int kBaseFirstPackageGPRSTimeout = 15*1000;
 
-const static unsigned int kMaxFirstPackageWifiTimeout = 25*1000;
-const static unsigned int kMaxFirstPackageGPRSTimeout = 35*1000;
+const static unsigned int kMaxFirstPackageWifiTimeout = 22*1000;
+const static unsigned int kMaxFirstPackageGPRSTimeout = 30*1000;
 
-const static unsigned int kGPRSMinRate = 3*1024;
-const static unsigned int kWifiMinRate = 10*1024;
+const static unsigned int kGPRSMinRate = 4*1024;
+const static unsigned int kWifiMinRate = 12*1024;
 
 const static unsigned int kWifiPackageInterval = 8*1000;
 const static unsigned int kGPRSPackageInterval = 12*1000;

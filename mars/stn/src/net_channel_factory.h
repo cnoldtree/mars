@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -22,32 +22,34 @@
 
 #include <string>
 #include <vector>
+#include <functional>
 
+#include "mars/stn/stn.h"
+#include "mars/stn/proto/longlink_packer.h"
 #include "mars/comm/messagequeue/message_queue.h"
 
-class ActiveLogic;
 
 namespace mars {
 namespace stn {
 
+struct Task;
 class LongLink;
 class NetSource;
 class ShortLinkInterface;
 
 namespace ShortLinkChannelFactory {
 
-ShortLinkInterface* Create(MessageQueue::MessageQueue_t _messagequeueid, NetSource& _netsource, const std::vector<std::string>& _host_list,
-					const std::string& _url, const int _taskid, bool _use_proxy);
+extern ShortLinkInterface* (*Create)(const comm::mq::MessageQueue_t& _messagequeueid, NetSource& _netsource, const Task& _task, const ShortlinkConfig& _config);
 
-void Destory(ShortLinkInterface* _short_link_channel);
+extern void (*Destory)(ShortLinkInterface* _short_link_channel);
 
 }
 
 namespace LongLinkChannelFactory {
 
-LongLink* Create(NetSource& _netsource,	MessageQueue::MessageQueue_t _messagequeueid);
+extern LongLink* (*Create)(const comm::mq::MessageQueue_t& _messagequeueid, NetSource& _netsource, const LonglinkConfig& _config);
 
-void Destory(LongLink* _long_link_channel);
+extern void (*Destory)(LongLink* _long_link_channel);
 
 }
 

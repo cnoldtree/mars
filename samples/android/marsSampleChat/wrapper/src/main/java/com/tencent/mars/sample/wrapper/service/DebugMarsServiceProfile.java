@@ -1,5 +1,5 @@
 /*
-* Tencent is pleased to support the open source community by making GAutomator available.
+* Tencent is pleased to support the open source community by making Mars available.
 * Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 *
 * Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -15,8 +15,8 @@
 package com.tencent.mars.sample.wrapper.service;
 
 /**
- * Default profile for testing
- * <p>
+ * Default profile for testing.
+ * <p></p>
  * Created by zhaoyuan on 2016/11/16.
  */
 
@@ -24,7 +24,7 @@ public class DebugMarsServiceProfile implements MarsServiceProfile {
 
     public static final short MAGIC = 0x0110;
     public static final short PRODUCT_ID = 200;
-    public static final String LONG_LINK_HOST = "localhost";
+    public static final String LONG_LINK_HOST = "marsopen.cn";
     public static final int[] LONG_LINK_PORTS = new int[]{8081};
     public static final int SHORT_LINK_PORT = 8080;
 

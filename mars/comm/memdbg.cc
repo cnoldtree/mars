@@ -1,4 +1,4 @@
-// Tencent is pleased to support the open source community by making GAutomator available.
+// Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
 // Licensed under the MIT License (the "License"); you may not use this file except in 
@@ -25,12 +25,11 @@
 #include <stdio.h>
 #include <assert.h>
 #include <vector>
-#include <sstream>
 
 #ifdef ANDROID
 #include <unistd.h>
-#include "comm/android/callstack.h"
 #endif
+#include "mars/comm/xlogger/xlogger.h"
 
 enum TMemoryType {
     ECType = 0,
@@ -51,9 +50,7 @@ struct CrtMem {
     void*                    _crtMemAddr;
     size_t                  _crtMemLen;
     TMemoryType                _crtMemoryType;
-#ifdef ANDROID
-    android::CallStack      _crtCallStack;
-#endif
+
 };
 
 static std::vector<CrtMem> gs_CrtMemRoot;
@@ -68,9 +65,7 @@ static void __LogAlloc(void* _retp, size_t _size, const char* _filename, int _li
     crtMemCell._crtMemAddr    = _retp;
     crtMemCell._crtMemLen     = _size;
     crtMemCell._crtMemoryType = _type;
-#ifdef ANDROID
-    crtMemCell._crtCallStack.update();
-#endif
+
 
     gs_CrtMemRoot.push_back(crtMemCell);
 }
@@ -79,18 +74,13 @@ static void __DeleteLogAlloc(void* _p, const char* _filename, int _line, const c
     for (std::vector<CrtMem>::iterator it = gs_CrtMemRoot.begin(); it != gs_CrtMemRoot.end(); ++it) {
         if (_p == it->_crtMemAddr) {
             if (_type != it->_crtMemoryType) {
-                std::stringstream strstream;
+                XMessage strstream;
                 strstream << "\n[" << it->_crtFileName << ", " << it->_crtLine << ", " << it->_crtFuncName << "]"
                           << "alloc type is: " << gs_typename[it->_crtMemoryType] << "\n"
                           << "[" << _filename << ", " << _line << ", " << _func << "]"
                           << "dealloc type is: " << gs_typename[_type] << "\n";
-#ifdef ANDROID
-                android::CallStack  callstack;
-                callstack.update();
-                std::string str_stack = callstack.Format("dealloc type error stack dump", "memdbg");
-                strstream << str_stack;
-#endif
-                __ASSERT(__FILE__, __LINE__, __FUNCTION__, strstream.str().c_str());
+
+                __ASSERT(__FILE__, __LINE__, __FUNCTION__, strstream.String().c_str());
             }
 
             gs_CrtMemRoot.erase(it);
@@ -202,7 +192,7 @@ extern "C" void DumpMemoryLeaks(void (* _pfunoutput)(const char*)) {
         return;
     }
 
-    std::stringstream strstream;
+    XMessage strstream;
     strstream << "Detected memory leaks!\n";
     strstream << "<--------------------------------Dumping objects-------------------------------->\n";
 
@@ -220,14 +210,12 @@ extern "C" void DumpMemoryLeaks(void (* _pfunoutput)(const char*)) {
         }
 
         strstream << ">\n";
-#ifdef ANDROID
-        strstream << it->_crtCallStack.Format("memory leaks stack dump", "memdbg");
-#endif
+
         strstream << "<--------------------------------Separator---------------------------------->\n";
     }
 
     strstream << "<--------------------------------Dump end----------------------------------->\n";
-    _pfunoutput(strstream.str().c_str());
+    _pfunoutput(strstream.String().c_str());
 #else
     _pfunoutput("Notice memdbg isn't running, because \"NO DEBUG\" was defined");
 #endif
